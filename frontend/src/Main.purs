@@ -3,11 +3,11 @@ module Main where
 import Prelude
 import Signal.DOM
 
-import Color (white)
+import Color (white, rgb, black)
 import DOM (onDOMContentLoaded)
 import Data.Array ((..))
 import Data.Foldable (foldMap)
-import Data.Int (toNumber, round)
+import Data.Int (toNumber, round, floor)
 import Data.Map (Map, member, lookup)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
@@ -19,6 +19,7 @@ import GFX as GFX
 import Graphics.Canvas (CanvasElement, CanvasImageSource, Context2D, drawImage, getCanvasElementById, getContext2D, setCanvasHeight, setCanvasWidth, tryLoadImage, getImageData, ImageData, putImageData)
 import Graphics.Drawing (translate, rectangle, filled, fillColor, Drawing, image)
 import Graphics.Drawing as D
+import Graphics.Drawing.Font as D
 import Signal (foldp, sampleOn, runSignal)
 import Signal.Channel (channel, send, subscribe)
 import Signal.Effect
@@ -81,13 +82,13 @@ initialState =
             dragging: false
         }
 
-dropPlayer :: DimensionPair -> CoordinatePair -> Point
-dropPlayer dims mPos =
-  let base = { x: (toNumber dims.w)/2.0 - 64.0, y: (toNumber dims.h)/2.0 - 128.0 }
+screenToMap :: DimensionPair -> CoordinatePair -> Point
+screenToMap dims mPos =
+  let base = { x: (toNumber dims.w)/2.0, y: (toNumber dims.h)/2.0 - 128.0 }
       screen = { x: (toNumber mPos.x) - base.x, y: (toNumber mPos.y) - base.y }
   in
-      { x: round (screen.x/64.0 + screen.y/32.0)/2
-      , y: round (screen.y/32.0 - screen.x/64.0)/2
+      { x: floor (screen.x/64.0 + screen.y/32.0)/2
+      , y: floor (screen.y/32.0 - screen.x/64.0)/2
       }
 
 inBBox :: CoordinatePair -> Point -> Boolean
@@ -96,7 +97,7 @@ inBBox _ _ = true
 gameLogic :: Inputs -> GameState -> GameState
 gameLogic i g =
   if g.dragging && i.mPressed == false then
-    g { playerPos = dropPlayer i.dims i.mPos, dragging = false }
+    g { playerPos = screenToMap i.dims i.mPos, dragging = false }
   else if g.dragging == false && i.mPressed && inBBox i.mPos g.playerPos then
     g { dragging = true }
   else
@@ -155,7 +156,12 @@ render ctx dims gs mRed mPos mPressed renderedMaze = do
         else
           translateN gs.playerPos.y south <<< translateN gs.playerPos.x east <<< base
   putImageData ctx renderedMaze 0.0 0.0
-  D.render ctx (player playerT)
+  let highlight = screenToMap dims mPos
+  let red = rgb 0xff 0 0
+  let baser = { x: (toNumber dims.w)/2.0 - 64.0, y: (toNumber dims.h)/2.0 - 128.0 }
+  let screen = { x: (toNumber mPos.x) - baser.x, y: (toNumber mPos.y) - baser.y }
+  D.render ctx (base (translateN highlight.y south (translateN highlight.x east (GFX.cell red red false false))) <> player playerT
+      <> D.text (D.font D.monospace 12 mempty) 100.0 100.0 (D.fillColor black) (show screen))
 
 resize :: CanvasElement -> DimensionPair -> Effect Unit
 resize canvas dims = do
