@@ -16,11 +16,12 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Console (log)
 import GFX as GFX
-import Graphics.Canvas (CanvasElement, CanvasImageSource, Context2D, drawImage, getCanvasElementById, getContext2D, setCanvasHeight, setCanvasWidth, tryLoadImage)
+import Graphics.Canvas (CanvasElement, CanvasImageSource, Context2D, drawImage, getCanvasElementById, getContext2D, setCanvasHeight, setCanvasWidth, tryLoadImage, getImageData, ImageData, putImageData)
 import Graphics.Drawing (translate, rectangle, filled, fillColor, Drawing, image)
 import Graphics.Drawing as D
 import Signal (foldp, sampleOn, runSignal)
 import Signal.Channel (channel, send, subscribe)
+import Signal.Effect
 
 type DirMap v = { left :: v, up :: v, right :: v, down :: v }
 
@@ -124,9 +125,9 @@ drawCell maze x y cell =
               southCell <- lookup { x: x, y: y + 1 } maze
               guard southCell.walls.right (pure unit))
 
--- FIXME don't rerender shit that don't change
-render :: Context2D -> DimensionPair -> GameState -> Maybe CanvasImageSource -> CoordinatePair -> Boolean -> Effect Unit
-render ctx dims gs mRed mPos mPressed = do
+-- TODO render in large offscreen canvas then never re-render until maze changes
+renderMaze :: Context2D -> Maze -> DimensionPair -> Effect ImageData
+renderMaze ctx maze dims = do
   D.render ctx (filled (fillColor white) (rectangle 0.0 0.0 (toNumber dims.w) (toNumber dims.h)))
   let base = translate ((toNumber dims.w)/2.0 - 64.0) ((toNumber dims.h)/2.0 - 128.0)
   let drawing =
@@ -135,10 +136,16 @@ render ctx dims gs mRed mPos mPressed = do
             foldMap
               (\y ->
                 maybe mempty
-                  (drawCell gs.maze.cells x y)
-                  (lookup { x: x, y: y } gs.maze.cells))
-              (gs.maze.borders.up .. gs.maze.borders.down))
-          (gs.maze.borders.left .. gs.maze.borders.right)
+                  (drawCell maze.cells x y)
+                  (lookup { x: x, y: y } maze.cells))
+              (maze.borders.up .. maze.borders.down))
+          (maze.borders.left .. maze.borders.right)
+  D.render ctx (base drawing)
+  getImageData ctx 0.0 0.0 (toNumber dims.w) (toNumber dims.h)
+
+render :: Context2D -> DimensionPair -> GameState -> Maybe CanvasImageSource -> CoordinatePair -> Boolean -> ImageData -> Effect Unit
+render ctx dims gs mRed mPos mPressed renderedMaze = do
+  let base = translate ((toNumber dims.w)/2.0 - 64.0) ((toNumber dims.h)/2.0 - 128.0)
   let player t = maybe mempty (t <<< translate 43.0 (-26.0) <<< image) mRed
   let south = { x: (-64.0), y: 32.0 }
   let east  = { x: 64.0, y: 32.0 }
@@ -147,7 +154,8 @@ render ctx dims gs mRed mPos mPressed = do
           translate (toNumber mPos.x - 60.0) (toNumber mPos.y)
         else
           translateN gs.playerPos.y south <<< translateN gs.playerPos.x east <<< base
-  D.render ctx (base drawing <> player playerT)
+  putImageData ctx renderedMaze 0.0 0.0
+  D.render ctx (player playerT)
 
 resize :: CanvasElement -> DimensionPair -> Effect Unit
 resize canvas dims = do
@@ -173,6 +181,7 @@ main = onDOMContentLoaded do
             ctx <- getContext2D canvas
             runSignal (resize canvas <$> dims)
             redPChan <- channel Nothing
-            runSignal (render ctx <$> dims <*> game <*> subscribe redPChan <*> mPos <*> mPressed)
+            renderedMaze <- mapEffect (renderMaze ctx initialState.maze)
+            runSignal (render ctx <$> dims <*> game <*> subscribe redPChan <*> mPos <*> mPressed <*> (renderedMaze dims))
             tryLoadImage "svg/player-red.svg" (send redPChan))
         mcanvas
