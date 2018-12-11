@@ -11,7 +11,7 @@
     "purescript-console": "^4.2.0",
     "purescript-effect": "^2.0.0",
     "purescript-affjax": "^7.0.0",
-    "purescript-drawing": "^4.0.0",
+    "purescript-drawing": "/k/gits/purescript-drawing#4.0.1",
     "purescript-signal": "^10.1.0"
   },
   "devDependencies": {
