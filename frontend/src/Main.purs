@@ -1,24 +1,25 @@
 module Main where
 
 import Prelude
-import Effect (Effect)
-import Effect.Console (log)
+import Signal.DOM
+
+import Color (white)
 import DOM (onDOMContentLoaded)
-import Signal.DOM (animationFrame, keyPressed, windowDimensions, DimensionPair)
-import Signal (foldp, sampleOn, runSignal)
 import Data.Array ((..))
-import Data.Int (toNumber)
-import Data.Maybe (Maybe (..), maybe)
+import Data.Foldable (foldMap)
+import Data.Int (toNumber, round)
 import Data.Map (Map, member, lookup)
 import Data.Map as Map
+import Data.Maybe (Maybe(..), maybe)
 import Data.Monoid (guard)
-import Data.Tuple (Tuple (..))
+import Data.Tuple (Tuple(..))
+import Effect (Effect)
+import Effect.Console (log)
+import GFX as GFX
 import Graphics.Canvas (CanvasElement, CanvasImageSource, Context2D, drawImage, getCanvasElementById, getContext2D, setCanvasHeight, setCanvasWidth, tryLoadImage)
 import Graphics.Drawing (translate, rectangle, filled, fillColor, Drawing, image)
-import Color (white)
 import Graphics.Drawing as D
-import GFX as GFX
-import Data.Foldable (foldMap)
+import Signal (foldp, sampleOn, runSignal)
 import Signal.Channel (channel, send, subscribe)
 
 type DirMap v = { left :: v, up :: v, right :: v, down :: v }
@@ -35,8 +36,8 @@ keycodes = {
         down: 40
     }
 
-type Inputs = { left :: Boolean, up :: Boolean, right :: Boolean, down :: Boolean }
-type GameState = { maze :: Maze }
+type Inputs = { left :: Boolean, up :: Boolean, right :: Boolean, down :: Boolean, dims :: DimensionPair, mPos :: CoordinatePair, mPressed :: Boolean }
+type GameState = { maze :: Maze, playerPos :: Point, dragging :: Boolean }
 
 initialState :: GameState
 initialState =
@@ -71,11 +72,34 @@ initialState =
                     right: 3,
                     down: 3
                 }
-            }
+            },
+            playerPos: {
+              x: 0,
+              y: 0
+            },
+            dragging: false
         }
 
+dropPlayer :: DimensionPair -> CoordinatePair -> Point
+dropPlayer dims mPos =
+  let base = { x: (toNumber dims.w)/2.0 - 64.0, y: (toNumber dims.h)/2.0 - 128.0 }
+      screen = { x: (toNumber mPos.x) - base.x, y: (toNumber mPos.y) - base.y }
+  in
+      { x: round (screen.x/64.0 + screen.y/32.0)/2
+      , y: round (screen.y/32.0 - screen.x/64.0)/2
+      }
+
+inBBox :: CoordinatePair -> Point -> Boolean
+inBBox _ _ = true
+
 gameLogic :: Inputs -> GameState -> GameState
-gameLogic _ g = g
+gameLogic i g =
+  if g.dragging && i.mPressed == false then
+    g { playerPos = dropPlayer i.dims i.mPos, dragging = false }
+  else if g.dragging == false && i.mPressed && inBBox i.mPos g.playerPos then
+    g { dragging = true }
+  else
+    g
 
 translateN :: Int -> { x :: Number, y :: Number } -> Drawing -> Drawing
 translateN n t = translate (t.x * (toNumber n)) (t.y * (toNumber n))
@@ -100,8 +124,9 @@ drawCell maze x y cell =
               southCell <- lookup { x: x, y: y + 1 } maze
               guard southCell.walls.right (pure unit))
 
-render :: Context2D -> DimensionPair -> GameState -> Maybe CanvasImageSource -> Effect Unit
-render ctx dims gs mRed = do
+-- FIXME don't rerender shit that don't change
+render :: Context2D -> DimensionPair -> GameState -> Maybe CanvasImageSource -> CoordinatePair -> Boolean -> Effect Unit
+render ctx dims gs mRed mPos mPressed = do
   D.render ctx (filled (fillColor white) (rectangle 0.0 0.0 (toNumber dims.w) (toNumber dims.h)))
   let base = translate ((toNumber dims.w)/2.0 - 64.0) ((toNumber dims.h)/2.0 - 128.0)
   let drawing =
@@ -114,10 +139,15 @@ render ctx dims gs mRed = do
                   (lookup { x: x, y: y } gs.maze.cells))
               (gs.maze.borders.up .. gs.maze.borders.down))
           (gs.maze.borders.left .. gs.maze.borders.right)
-  let south = translate (-64.0) 32.0
-  let east  = translate 64.0 32.0
-  let player t = maybe mempty (t <<< translate 43.0 (-26.0) <<< base <<< image) mRed
-  D.render ctx (base drawing <> player (translate 0.0 0.0) <> player (east <<< south))
+  let player t = maybe mempty (t <<< translate 43.0 (-26.0) <<< image) mRed
+  let south = { x: (-64.0), y: 32.0 }
+  let east  = { x: 64.0, y: 32.0 }
+  let playerT =
+        if gs.dragging then
+          translate (toNumber mPos.x - 60.0) (toNumber mPos.y)
+        else
+          translateN gs.playerPos.y south <<< translateN gs.playerPos.x east <<< base
+  D.render ctx (base drawing <> player playerT)
 
 resize :: CanvasElement -> DimensionPair -> Effect Unit
 resize canvas dims = do
@@ -133,14 +163,16 @@ main = onDOMContentLoaded do
     downInputs <- keyPressed keycodes.down
     mcanvas <- getCanvasElementById "canvas"
     dims <- windowDimensions
+    mPos <- mousePos
+    mPressed <- mouseButtonPressed MouseLeftButton
     maybe
         (log "error no canvas")
         (\canvas -> do
-            let inputs = { left: _, right: _, up: _, down: _ } <$> leftInputs <*> rightInputs <*> upInputs <*> downInputs
-            let game = foldp gameLogic initialState inputs
+            let inputs = { left: _, right: _, up: _, down: _, dims: _, mPos: _, mPressed: _ } <$> leftInputs <*> rightInputs <*> upInputs <*> downInputs <*> dims <*> mPos <*> mPressed
+            let game = foldp gameLogic initialState inputs -- (sampleOn frames inputs)
             ctx <- getContext2D canvas
             runSignal (resize canvas <$> dims)
             redPChan <- channel Nothing
-            runSignal (render ctx <$> dims <*> game <*> subscribe redPChan)
+            runSignal (render ctx <$> dims <*> game <*> subscribe redPChan <*> mPos <*> mPressed)
             tryLoadImage "svg/player-red.svg" (send redPChan))
         mcanvas
