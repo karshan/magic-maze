@@ -1,18 +1,24 @@
 module Main where
 
+import Isometric
 import Prelude
 import Signal.DOM
+import Signal.Effect
+import Types
 
-import Color (Color, white, rgb, black)
+import Color (Color, white, rgb, rgba, black)
 import DOM (onDOMContentLoaded)
 import Data.Array ((..))
 import Data.Foldable (class Foldable, foldMap)
-import Data.FoldableWithIndex (foldWithIndexM)
+import Data.FoldableWithIndex (foldWithIndexM, foldMapWithIndex, foldlWithIndex)
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int (toNumber, round, floor)
 import Data.Map (Map, member, lookup)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), maybe, isJust)
+import Data.Maybe (Maybe(..), maybe, isNothing, isJust)
+import Data.Maybe.First (First(..))
 import Data.Monoid (guard)
+import Data.Newtype (wrap, unwrap)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Console (log)
@@ -23,9 +29,6 @@ import Graphics.Drawing as D
 import Graphics.Drawing.Font as D
 import Signal (Signal, foldp, sampleOn, runSignal, constant, map2)
 import Signal.Channel (channel, send, subscribe)
-import Signal.Effect
-import Types
-import Isometric
 
 translate' :: Point -> Drawing -> Drawing
 translate' { x, y } = translate x y
@@ -37,7 +40,6 @@ keycodes = {
         right: 39,
         down: 40
     }
-
 
 initialState :: GameState
 initialState =
@@ -73,31 +75,46 @@ initialState =
                     down: 3
                 }
             },
-            playerPos: MapPoint {
-              x: 0,
-              y: 0
-            },
+            players: Map.fromFoldable [
+                Tuple Red (MapPoint { x: 1, y: 1 }),
+                Tuple Yellow (MapPoint { x: 2, y: 1 }),
+                Tuple Green (MapPoint { x: 1, y: 2 }),
+                Tuple Purple (MapPoint { x: 2, y: 2  })
+            ],
             dragging: Nothing
         }
 
+maybeStartDrag :: Inputs -> PlayerPositions -> Maybe DragState
+maybeStartDrag i players =
+  unwrap $
+   foldlWithIndex
+     (\playerColor accum position ->
+         accum <>
+           map ({ playerColor: playerColor, dragPoint: _ })
+             (First $ evalBBox (GFX.playerBBox i.dims position) (toScreenPoint i.mousePos)))
+     (First Nothing)
+     players
+
+dropPlayer :: Inputs -> DragState -> PlayerPositions -> PlayerPositions
+dropPlayer i { playerColor, dragPoint } =
+  Map.update (const $ Just $ screenToMap i.dims
+                (ScreenPoint $ toPoint i.mousePos - dragPoint + GFX.playerCenterT))
+    playerColor
+
+data DragCommand =
+    StartDrag
+  | EndDrag DragState
+
 gameLogic :: Inputs -> GameState -> GameState
 gameLogic i g =
-  maybe
-    (if i.mousePressed then
-       g { dragging = evalBBox (GFX.playerBBox i.dims g.playerPos) (toScreenPoint i.mousePos) }
-     else
-       g)
-    (\dragPoint ->
-        if not i.mousePressed then
-          let sp = ScreenPoint
-          in g {
-                 playerPos = screenToMap i.dims
-                     (toScreenPoint i.mousePos - sp dragPoint + sp GFX.playerCenterT),
-                 dragging = Nothing
-               }
-        else
-          g)
-    g.dragging
+  let dragCommand = unwrap $ (do
+        dragState <- First g.dragging
+        guard (not i.mousePressed) (pure (EndDrag dragState))) <>
+        guard (isNothing g.dragging && i.mousePressed) (pure StartDrag)
+  in case dragCommand of
+        Nothing -> g
+        Just StartDrag -> g { dragging = maybeStartDrag i g.players }
+        Just (EndDrag dragState) -> g { players = dropPlayer i dragState g.players, dragging = Nothing }
 
 drawCell :: DimensionPair -> Cells -> Int -> Int -> Cell -> Drawing
 drawCell dims maze x y cell =
@@ -125,15 +142,13 @@ drawCellWall dims maze x y cell =
 toPoint :: { x :: Int, y :: Int } -> Point
 toPoint { x, y } = { x: toNumber x, y: toNumber y }
 
-drawPlayer :: DimensionPair -> Maybe Point -> CoordinatePair -> MapPoint -> Maybe CanvasImageSource -> Drawing
-drawPlayer dims mDragPoint mouse playerPos mCanvasImage =
-  maybe
-    mempty
-    ((maybe
-        (GFX.playerCell <<< mapToScreenD dims playerPos)
+drawPlayer :: DimensionPair -> MapPoint -> Maybe Point -> CoordinatePair -> CanvasImageSource -> Drawing
+drawPlayer dims playerPosition mDragPoint mouse canvasImage =
+    (maybe
+        (GFX.playerCell <<< mapToScreenD dims playerPosition)
         (\dragPoint -> translate' (toPoint mouse - dragPoint))
-        mDragPoint) <<< image)
-    mCanvasImage
+        mDragPoint)
+    (image canvasImage)
 
 forAllCells :: forall m. Monoid m => Maze -> (Int -> Int -> Cell -> m) -> m
 forAllCells maze f =
@@ -150,30 +165,41 @@ forAllCells maze f =
 
 -- TODO Render in large offscreen canvas then never re-render until maze changes.
 --      Then we don't need to clear the background, it will be transparent by default.
-renderMaze :: Context2D -> Maze -> DimensionPair -> Effect ImageData
-renderMaze ctx maze dims = do
-  D.render ctx (filled (fillColor white) (rectangle 0.0 0.0 (toNumber dims.w) (toNumber dims.h)))
+renderMaze :: Context2D -> Maze -> { dims :: DimensionPair, assets :: Assets } -> Effect ImageData
+renderMaze ctx maze { dims, assets } = do
+  D.render ctx (filled (fillColor (rgba 0 0 0 0.0)) (rectangle 0.0 0.0 (toNumber dims.w) (toNumber dims.h)))
   let cells = forAllCells maze (drawCell dims maze.cells)
   let walls = forAllCells maze (drawCellWall dims maze.cells)
-  D.render ctx (cells <> walls)
+  let bg = maybe mempty image (lookup Background assets)
+  D.render ctx (GFX.background dims bg <> cells <> walls)
   getImageData ctx 0.0 0.0 (toNumber dims.w) (toNumber dims.h)
 
 renderText :: Number -> Number -> Color -> String -> Drawing
 renderText x y c s = D.text (D.font D.monospace 12 mempty) x y (D.fillColor c) s
 
 render :: Context2D -> DimensionPair -> Assets -> CoordinatePair -> ImageData -> GameState -> Effect Unit
-render ctx dims assets mPos renderedMaze gs = do
+render ctx dims assets mouse renderedMaze gs = do
+  let highlight = screenToMap dims (toScreenPoint mouse)
+  let debugText = renderText 100.0 100.0 white (show gs.players)
+  let players =
+        (foldMapWithIndex
+          (\asset img ->
+              case asset of
+                Player p ->
+                    let mDragPoint = unwrap do
+                          ds <- First gs.dragging
+                          guard (ds.playerColor == p) (pure ds.dragPoint)
+                    in maybe mempty (\pos -> drawPlayer dims pos mDragPoint mouse img) (lookup p gs.players)
+                _ -> mempty)
+        assets)
   putImageData ctx renderedMaze 0.0 0.0
-  let highlight = screenToMap dims (toScreenPoint mPos)
-  let debugText = renderText 100.0 100.0 black (show mPos)
-  D.render ctx (maybe mempty (drawPlayer dims gs.dragging mPos gs.playerPos) (lookup (Player Red) assets))
+  D.render ctx (players <> debugText)
 
 resize :: CanvasElement -> DimensionPair -> Effect Unit
 resize canvas dims = do
   setCanvasWidth canvas (toNumber dims.w)
   setCanvasHeight canvas (toNumber dims.h)
 
-type Asset = Tuple AssetName (Maybe CanvasImageSource)
 loadAsset :: AssetName -> String -> Effect (Signal Asset)
 loadAsset name url = do
   c <- channel $ Tuple name Nothing
@@ -185,7 +211,7 @@ loadAssets toLoad =
   foldWithIndexM
     (\name accum url -> do
         sig <- loadAsset name url
-        pure $ map2 (\(Tuple k v) m -> Map.insert k v m) sig accum)
+        pure $ map2 (\(Tuple k v) m -> Map.alter (const v) k m) sig accum)
     (constant (Map.empty))
     toLoad
 
@@ -209,6 +235,13 @@ main = onDOMContentLoaded do
             ctx <- getContext2D canvas
             runSignal (resize canvas <$> dims)
             renderedMaze <- mapEffect (renderMaze ctx initialState.maze) -- TODO renderMaze <~ Signal Maze
-            assets <- loadAssets $ Map.fromFoldable [ Tuple (Player Red) "svg/player-red.svg" ]
-            runSignal (render ctx <$> dims <*> assets <*> mPos <*> (renderedMaze dims) <*> game))
+            assets <- loadAssets $ Map.fromFoldable [
+                        Tuple (Player Red) "svg/player-red.svg",
+                        Tuple (Player Yellow) "svg/player-yellow.svg",
+                        Tuple (Player Green) "svg/player-green.svg",
+                        Tuple (Player Purple) "svg/player-purple.svg",
+                        Tuple Background "svg/background.svg"
+                      ]
+            let renderedMazeSignal = renderedMaze $ { dims: _, assets: _ } <$> dims <*> assets
+            runSignal (render ctx <$> dims <*> assets <*> mPos <*> renderedMazeSignal <*> game))
         mcanvas

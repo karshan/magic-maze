@@ -4,7 +4,8 @@ import Prelude
 import Graphics.Drawing (Drawing, Point, filled, svgPath, fillColor, outlined, outlineColor, translate)
 import Color (Color, rgb)
 import Data.Array ((..))
-import Data.Foldable (foldMap)
+import Data.Foldable (foldMap, fold)
+import Data.Int
 import Types
 import Isometric
 import Signal.DOM (DimensionPair)
@@ -85,3 +86,21 @@ playerBBox dims mp =
     w: playerWidth,
     h: playerHeight
   }
+
+bgWidth :: Number
+bgWidth = 740.0
+bgHeight :: Number
+bgHeight = 486.0
+
+iterate :: forall a. (a -> a) -> Int -> a -> a
+iterate _ 0 a = a
+iterate f n a = iterate f (n - 1) (f a)
+
+background :: DimensionPair -> Drawing -> Drawing
+background dims bg =
+  let r = translate bgWidth 0.0
+      d = translate 0.0 bgHeight
+  in fold do
+  x <- 0 .. (ceil (toNumber dims.w/bgWidth))
+  y <- 0 .. (ceil (toNumber dims.h/bgHeight))
+  pure $ iterate r x $ iterate d y $ bg

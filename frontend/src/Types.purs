@@ -1,9 +1,12 @@
 module Types where
 
 import Prelude
+import Data.Generic.Rep (class Generic)
+import Data.Generic.Rep.Show (genericShow)
+import Data.Int (toNumber)
 import Data.Maybe (Maybe)
 import Data.Map (Map)
-import Data.Int (toNumber)
+import Data.Tuple (Tuple)
 import Graphics.Drawing (Point)
 import Graphics.Canvas (CanvasImageSource)
 import Signal.DOM (DimensionPair, CoordinatePair)
@@ -26,7 +29,9 @@ type Inputs = {
   mousePressed :: Boolean
 }
 
-type GameState = { maze :: Maze, playerPos :: MapPoint, dragging :: Maybe Point }
+type PlayerPositions = Map PlayerColor MapPoint
+type GameState = { maze :: Maze, players :: PlayerPositions, dragging :: Maybe DragState }
+type DragState = { playerColor :: PlayerColor, dragPoint :: Point }
 
 newtype ScreenPoint = ScreenPoint Point
 instance semiringScreenPoint :: Semiring ScreenPoint where
@@ -43,6 +48,8 @@ toScreenPoint { x, y } = ScreenPoint { x: toNumber x, y: toNumber y }
 newtype MapPoint = MapPoint { x :: Int, y :: Int }
 derive instance eqMapPoint :: Eq MapPoint
 derive instance ordMapPoint :: Ord MapPoint
+derive instance genericMapPoint :: Generic MapPoint _
+instance showMapPoint :: Show MapPoint where show = genericShow
 
 data PlayerColor =
     Red
@@ -51,11 +58,17 @@ data PlayerColor =
   | Purple
 derive instance eqPlayerColor :: Eq PlayerColor
 derive instance ordPlayerColor :: Ord PlayerColor
+derive instance genericPlayerColor :: Generic PlayerColor _
+instance showPlayerColor :: Show PlayerColor where show = genericShow
+
 
 data AssetName =
     Player PlayerColor
   | Background
 derive instance eqAssetName :: Eq AssetName
 derive instance ordAssetName :: Ord AssetName
+derive instance genericAssetName :: Generic AssetName _
+instance showAssetName :: Show AssetName where show = genericShow
 
-type Assets = Map AssetName (Maybe CanvasImageSource)
+type Asset = Tuple AssetName (Maybe CanvasImageSource)
+type Assets = Map AssetName CanvasImageSource
