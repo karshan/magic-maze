@@ -1,10 +1,13 @@
 module GFX where
 
 import Prelude
-import Graphics.Drawing (Drawing, filled, svgPath, fillColor, outlined, outlineColor, translate)
+import Graphics.Drawing (Drawing, Point, filled, svgPath, fillColor, outlined, outlineColor, translate)
 import Color (Color, rgb)
 import Data.Array ((..))
 import Data.Foldable (foldMap)
+import Types
+import Isometric
+import Signal.DOM (DimensionPair)
 
 type ColorSet = { base :: Color, light1 :: Color, light2 :: Color }
 
@@ -15,29 +18,29 @@ cell' walkable =
   else
     cell (rgb 0x10 0x10 0x10) (rgb 0x00 0x00 0x00)
 
+-- All translations are relative to cell NW corner unless specified
 cell :: Color -> Color -> Boolean -> Boolean -> Drawing
-cell bright dark leftEdge rightEdge =
+cell bright dark leftEdge rightEdge = translate (-tileHalfWidth) 0.0 $
     filled (fillColor bright) (svgPath "M0 32L64 0L128 32L64 64L0 32Z")
  <> outlined (outlineColor dark) (svgPath "M0 32L64 0L128 32L64 64L0 32Z")
  <> (if leftEdge then filled (fillColor dark) (svgPath "M0 32L64 64V72L0 40V32Z") else mempty)
  <> (if rightEdge then filled (fillColor dark) (svgPath "M128 32L64 64V72L128 40V32Z") else mempty)
 
 -- FIXME light1 must = base, or wall corners will look weird
-base :: ColorSet
-base = { base: rgb 0x94 0xA7 0xC3, light1: rgb 0x94 0xA7 0xC3, light2: rgb 0xC0 0xD0 0xE7 }
+baseColors :: ColorSet
+baseColors = { base: rgb 0x94 0xA7 0xC3, light1: rgb 0x94 0xA7 0xC3, light2: rgb 0xC0 0xD0 0xE7 }
 
--- Translations are relative to cell
 wallDown :: Drawing
-wallDown = translate 0.0 19.0 $ wallX base
+wallDown = translate (-tileHalfWidth) 19.0 $ wallX baseColors
 
 wallRight :: Drawing
-wallRight = translate 60.0 19.0 $ wallY base
+wallRight = translate (-4.0) 19.0 $ wallY baseColors
 
 wallSECorner' :: Drawing
-wallSECorner' = translate 64.0 51.0 $ wallSECorner base.base
+wallSECorner' = translate 0.0 51.0 $ wallSECorner baseColors.base
 
 wallNWCorner' :: Drawing
-wallNWCorner' = translate 60.0 49.0 $ wallNWCorner base.light2
+wallNWCorner' = translate (-4.0) 49.0 $ wallNWCorner baseColors.light2
 
 wallX :: ColorSet -> Drawing
 wallX c =
@@ -58,3 +61,27 @@ wallSECorner c =
 wallNWCorner :: Color -> Drawing
 wallNWCorner c =
     filled (fillColor c) (svgPath "M0 2L4 0L8 2L4 4L0 2Z")
+
+type Translation = Point
+playerWidth :: Number
+playerWidth = 42.0
+playerHeight :: Number
+playerHeight = 69.0
+playerCellT :: Translation
+playerCellT = { x: -playerWidth/2.0, y: -26.0 }
+-- Relative to player top left corner
+playerCenterT :: Translation
+playerCenterT = { x: playerWidth/2.0, y: playerHeight - 14.0 }
+
+playerCell :: Drawing -> Drawing
+playerCell = translate playerCellT.x playerCellT.y
+
+playerBBox :: DimensionPair -> MapPoint -> Rect
+playerBBox dims mp =
+  let (ScreenPoint p) = mapToScreen dims mp
+  in {
+    x: p.x + playerCellT.x,
+    y: p.y + playerCellT.y,
+    w: playerWidth,
+    h: playerHeight
+  }

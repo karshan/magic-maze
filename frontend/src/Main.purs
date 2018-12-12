@@ -3,32 +3,32 @@ module Main where
 import Prelude
 import Signal.DOM
 
-import Color (white, rgb, black)
+import Color (Color, white, rgb, black)
 import DOM (onDOMContentLoaded)
 import Data.Array ((..))
-import Data.Foldable (foldMap)
+import Data.Foldable (class Foldable, foldMap)
+import Data.FoldableWithIndex (foldWithIndexM)
 import Data.Int (toNumber, round, floor)
 import Data.Map (Map, member, lookup)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..), maybe, isJust)
 import Data.Monoid (guard)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Console (log)
 import GFX as GFX
 import Graphics.Canvas (CanvasElement, CanvasImageSource, Context2D, drawImage, getCanvasElementById, getContext2D, setCanvasHeight, setCanvasWidth, tryLoadImage, getImageData, ImageData, putImageData)
-import Graphics.Drawing (translate, rectangle, filled, fillColor, Drawing, image)
+import Graphics.Drawing (translate, rectangle, filled, fillColor, Drawing, image, Point)
 import Graphics.Drawing as D
 import Graphics.Drawing.Font as D
-import Signal (foldp, sampleOn, runSignal)
+import Signal (Signal, foldp, sampleOn, runSignal, constant, map2)
 import Signal.Channel (channel, send, subscribe)
 import Signal.Effect
+import Types
+import Isometric
 
-type DirMap v = { left :: v, up :: v, right :: v, down :: v }
-
-type Point = { x :: Int, y :: Int }
-type Maze = { cells :: Map Point Cell, borders :: DirMap Int }
-type Cell = { walls :: { right :: Boolean, down :: Boolean }, walkable :: Boolean }
+translate' :: Point -> Drawing -> Drawing
+translate' { x, y } = translate x y
 
 keycodes :: DirMap Int
 keycodes = {
@@ -38,8 +38,6 @@ keycodes = {
         down: 40
     }
 
-type Inputs = { left :: Boolean, up :: Boolean, right :: Boolean, down :: Boolean, dims :: DimensionPair, mPos :: CoordinatePair, mPressed :: Boolean }
-type GameState = { maze :: Maze, playerPos :: Point, dragging :: Boolean }
 
 initialState :: GameState
 initialState =
@@ -51,22 +49,22 @@ initialState =
         {
             maze: {
                 cells: Map.fromFoldable [
-                    Tuple { x: 0, y: 0 } { walls: rightWall, walkable: true },
-                    Tuple { x: 1, y: 0 } { walls: noWalls, walkable: true },
-                    Tuple { x: 2, y: 0 } { walls: downWall, walkable: true },
-                    Tuple { x: 3, y: 0 } { walls: rightWall, walkable: true },
-                    Tuple { x: 0, y: 1 } { walls: rightWall, walkable: true },
-                    Tuple { x: 1, y: 1 } { walls: noWalls, walkable: true },
-                    Tuple { x: 2, y: 1 } { walls: rightWall, walkable: true },
-                    Tuple { x: 3, y: 1 } { walls: rightWall, walkable: true },
-                    Tuple { x: 0, y: 2 } { walls: noWalls, walkable: true },
-                    Tuple { x: 1, y: 2 } { walls: downWall, walkable: true },
-                    Tuple { x: 2, y: 2 } { walls: rdWall, walkable: true },
-                    Tuple { x: 3, y: 2 } { walls: noWalls, walkable: true },
-                    Tuple { x: 0, y: 3 } { walls: downWall, walkable: true },
-                    Tuple { x: 1, y: 3 } { walls: noWalls, walkable: true },
-                    Tuple { x: 2, y: 3 } { walls: rdWall, walkable: true },
-                    Tuple { x: 3, y: 3 } { walls: noWalls, walkable: false }
+                    Tuple (MapPoint { x: 0, y: 0 }) { walls: rightWall, walkable: true },
+                    Tuple (MapPoint { x: 1, y: 0 }) { walls: noWalls, walkable: true },
+                    Tuple (MapPoint { x: 2, y: 0 }) { walls: downWall, walkable: true },
+                    Tuple (MapPoint { x: 3, y: 0 }) { walls: rightWall, walkable: true },
+                    Tuple (MapPoint { x: 0, y: 1 }) { walls: rightWall, walkable: true },
+                    Tuple (MapPoint { x: 1, y: 1 }) { walls: noWalls, walkable: true },
+                    Tuple (MapPoint { x: 2, y: 1 }) { walls: rightWall, walkable: true },
+                    Tuple (MapPoint { x: 3, y: 1 }) { walls: rightWall, walkable: true },
+                    Tuple (MapPoint { x: 0, y: 2 }) { walls: noWalls, walkable: true },
+                    Tuple (MapPoint { x: 1, y: 2 }) { walls: downWall, walkable: true },
+                    Tuple (MapPoint { x: 2, y: 2 }) { walls: rdWall, walkable: true },
+                    Tuple (MapPoint { x: 3, y: 2 }) { walls: noWalls, walkable: true },
+                    Tuple (MapPoint { x: 0, y: 3 }) { walls: downWall, walkable: true },
+                    Tuple (MapPoint { x: 1, y: 3 }) { walls: noWalls, walkable: true },
+                    Tuple (MapPoint { x: 2, y: 3 }) { walls: rdWall, walkable: true },
+                    Tuple (MapPoint { x: 3, y: 3 }) { walls: noWalls, walkable: false }
                 ],
                 borders: {
                     left: 0,
@@ -75,98 +73,121 @@ initialState =
                     down: 3
                 }
             },
-            playerPos: {
+            playerPos: MapPoint {
               x: 0,
               y: 0
             },
-            dragging: false
+            dragging: Nothing
         }
-
-screenToMap :: DimensionPair -> CoordinatePair -> Point
-screenToMap dims mPos =
-  let base = { x: (toNumber dims.w)/2.0, y: (toNumber dims.h)/2.0 - 128.0 }
-      screen = { x: (toNumber mPos.x) - base.x, y: (toNumber mPos.y) - base.y }
-  in
-      { x: floor (screen.x/64.0 + screen.y/32.0)/2
-      , y: floor (screen.y/32.0 - screen.x/64.0)/2
-      }
-
-inBBox :: CoordinatePair -> Point -> Boolean
-inBBox _ _ = true
 
 gameLogic :: Inputs -> GameState -> GameState
 gameLogic i g =
-  if g.dragging && i.mPressed == false then
-    g { playerPos = screenToMap i.dims i.mPos, dragging = false }
-  else if g.dragging == false && i.mPressed && inBBox i.mPos g.playerPos then
-    g { dragging = true }
-  else
-    g
+  maybe
+    (if i.mousePressed then
+       g { dragging = evalBBox (GFX.playerBBox i.dims g.playerPos) (toScreenPoint i.mousePos) }
+     else
+       g)
+    (\dragPoint ->
+        if not i.mousePressed then
+          let sp = ScreenPoint
+          in g {
+                 playerPos = screenToMap i.dims
+                     (toScreenPoint i.mousePos - sp dragPoint + sp GFX.playerCenterT),
+                 dragging = Nothing
+               }
+        else
+          g)
+    g.dragging
 
-translateN :: Int -> { x :: Number, y :: Number } -> Drawing -> Drawing
-translateN n t = translate (t.x * (toNumber n)) (t.y * (toNumber n))
-
-drawCell :: Map Point Cell -> Int -> Int -> Cell -> Drawing
-drawCell maze x y cell =
-  let south = { x: (-64.0), y: 32.0 }
-      east  = { x: 64.0, y: 32.0 }
-      cellT = translateN y south <<< translateN x east
+drawCell :: DimensionPair -> Cells -> Int -> Int -> Cell -> Drawing
+drawCell dims maze x y cell =
+  let mp x_ y_ = MapPoint { x: x_, y: y_ }
   in
-    cellT
+    mapToScreenD dims (MapPoint {x, y})
       (GFX.cell'
         cell.walkable
-        (not $ member { x: x, y: y + 1 } maze)
-        (not $ member { x: x + 1, y: y } maze))
-     <> guard cell.walls.right (cellT GFX.wallRight)
-     <> guard cell.walls.down (cellT GFX.wallDown)
-     <> guard (cell.walls.right && cell.walls.down) (cellT GFX.wallSECorner')
-     <> maybe mempty (\_ -> GFX.wallNWCorner')
-          (do eastCell <- lookup { x: x + 1, y: y } maze
-              guard eastCell.walls.down (pure unit)
-              southCell <- lookup { x: x, y: y + 1 } maze
-              guard southCell.walls.right (pure unit))
+        (not $ member (mp x (y + 1)) maze)
+        (not $ member (mp (x + 1) y) maze))
 
--- TODO render in large offscreen canvas then never re-render until maze changes
+drawCellWall :: DimensionPair -> Cells -> Int -> Int -> Cell -> Drawing
+drawCellWall dims maze x y cell =
+ let mp x_ y_ = MapPoint { x: x_, y: y_ }
+     cellT = mapToScreenD dims (MapPoint {x, y})
+ in guard cell.walls.right (cellT GFX.wallRight)
+ <> guard cell.walls.down (cellT GFX.wallDown)
+ <> guard (cell.walls.right && cell.walls.down) (cellT GFX.wallSECorner')
+ <> maybe mempty (const GFX.wallNWCorner')
+      (do eastCell <- lookup (mp (x + 1) y) maze
+          guard eastCell.walls.down (pure unit)
+          southCell <- lookup (mp x (y + 1)) maze
+          guard southCell.walls.right (pure unit))
+
+toPoint :: { x :: Int, y :: Int } -> Point
+toPoint { x, y } = { x: toNumber x, y: toNumber y }
+
+drawPlayer :: DimensionPair -> Maybe Point -> CoordinatePair -> MapPoint -> Maybe CanvasImageSource -> Drawing
+drawPlayer dims mDragPoint mouse playerPos mCanvasImage =
+  maybe
+    mempty
+    ((maybe
+        (GFX.playerCell <<< mapToScreenD dims playerPos)
+        (\dragPoint -> translate' (toPoint mouse - dragPoint))
+        mDragPoint) <<< image)
+    mCanvasImage
+
+forAllCells :: forall m. Monoid m => Maze -> (Int -> Int -> Cell -> m) -> m
+forAllCells maze f =
+  foldMap
+    (\x ->
+      foldMap
+        (\y ->
+          maybe
+            mempty
+            (f x y)
+            (lookup (MapPoint { x, y }) maze.cells))
+        (maze.borders.up .. maze.borders.down))
+    (maze.borders.left .. maze.borders.right)
+
+-- TODO Render in large offscreen canvas then never re-render until maze changes.
+--      Then we don't need to clear the background, it will be transparent by default.
 renderMaze :: Context2D -> Maze -> DimensionPair -> Effect ImageData
 renderMaze ctx maze dims = do
   D.render ctx (filled (fillColor white) (rectangle 0.0 0.0 (toNumber dims.w) (toNumber dims.h)))
-  let base = translate ((toNumber dims.w)/2.0 - 64.0) ((toNumber dims.h)/2.0 - 128.0)
-  let drawing =
-        foldMap
-          (\x ->
-            foldMap
-              (\y ->
-                maybe mempty
-                  (drawCell maze.cells x y)
-                  (lookup { x: x, y: y } maze.cells))
-              (maze.borders.up .. maze.borders.down))
-          (maze.borders.left .. maze.borders.right)
-  D.render ctx (base drawing)
+  let cells = forAllCells maze (drawCell dims maze.cells)
+  let walls = forAllCells maze (drawCellWall dims maze.cells)
+  D.render ctx (cells <> walls)
   getImageData ctx 0.0 0.0 (toNumber dims.w) (toNumber dims.h)
 
-render :: Context2D -> DimensionPair -> GameState -> Maybe CanvasImageSource -> CoordinatePair -> Boolean -> ImageData -> Effect Unit
-render ctx dims gs mRed mPos mPressed renderedMaze = do
-  let base = translate ((toNumber dims.w)/2.0 - 64.0) ((toNumber dims.h)/2.0 - 128.0)
-  let player t = maybe mempty (t <<< translate 43.0 (-26.0) <<< image) mRed
-  let south = { x: (-64.0), y: 32.0 }
-  let east  = { x: 64.0, y: 32.0 }
-  let playerT =
-        if gs.dragging then
-          translate (toNumber mPos.x - 60.0) (toNumber mPos.y)
-        else
-          translateN gs.playerPos.y south <<< translateN gs.playerPos.x east <<< base
+renderText :: Number -> Number -> Color -> String -> Drawing
+renderText x y c s = D.text (D.font D.monospace 12 mempty) x y (D.fillColor c) s
+
+render :: Context2D -> DimensionPair -> Assets -> CoordinatePair -> ImageData -> GameState -> Effect Unit
+render ctx dims assets mPos renderedMaze gs = do
   putImageData ctx renderedMaze 0.0 0.0
-  let highlight = screenToMap dims mPos
-  let red = rgb 0xff 0 0
-  let baser = { x: (toNumber dims.w)/2.0 - 64.0, y: (toNumber dims.h)/2.0 - 128.0 }
-  let screen = { x: (toNumber mPos.x) - baser.x, y: (toNumber mPos.y) - baser.y }
-  D.render ctx (base (translateN highlight.y south (translateN highlight.x east (GFX.cell red red false false))) <> player playerT
-      <> D.text (D.font D.monospace 12 mempty) 100.0 100.0 (D.fillColor black) (show screen))
+  let highlight = screenToMap dims (toScreenPoint mPos)
+  let debugText = renderText 100.0 100.0 black (show mPos)
+  D.render ctx (maybe mempty (drawPlayer dims gs.dragging mPos gs.playerPos) (lookup (Player Red) assets))
 
 resize :: CanvasElement -> DimensionPair -> Effect Unit
 resize canvas dims = do
   setCanvasWidth canvas (toNumber dims.w)
   setCanvasHeight canvas (toNumber dims.h)
+
+type Asset = Tuple AssetName (Maybe CanvasImageSource)
+loadAsset :: AssetName -> String -> Effect (Signal Asset)
+loadAsset name url = do
+  c <- channel $ Tuple name Nothing
+  tryLoadImage url (send c <<< Tuple name)
+  pure (subscribe c)
+
+loadAssets :: Map AssetName String -> Effect (Signal Assets)
+loadAssets toLoad =
+  foldWithIndexM
+    (\name accum url -> do
+        sig <- loadAsset name url
+        pure $ map2 (\(Tuple k v) m -> Map.insert k v m) sig accum)
+    (constant (Map.empty))
+    toLoad
 
 main :: Effect Unit
 main = onDOMContentLoaded do
@@ -182,12 +203,12 @@ main = onDOMContentLoaded do
     maybe
         (log "error no canvas")
         (\canvas -> do
-            let inputs = { left: _, right: _, up: _, down: _, dims: _, mPos: _, mPressed: _ } <$> leftInputs <*> rightInputs <*> upInputs <*> downInputs <*> dims <*> mPos <*> mPressed
-            let game = foldp gameLogic initialState inputs -- (sampleOn frames inputs)
+            let inputs = { left: _, right: _, up: _, down: _, dims: _, mousePos: _, mousePressed: _ } <$>
+                          leftInputs <*> rightInputs <*> upInputs <*> downInputs <*> dims <*> mPos <*> mPressed
+            let game = foldp gameLogic initialState (sampleOn frames inputs)
             ctx <- getContext2D canvas
             runSignal (resize canvas <$> dims)
-            redPChan <- channel Nothing
-            renderedMaze <- mapEffect (renderMaze ctx initialState.maze)
-            runSignal (render ctx <$> dims <*> game <*> subscribe redPChan <*> mPos <*> mPressed <*> (renderedMaze dims))
-            tryLoadImage "svg/player-red.svg" (send redPChan))
+            renderedMaze <- mapEffect (renderMaze ctx initialState.maze) -- TODO renderMaze <~ Signal Maze
+            assets <- loadAssets $ Map.fromFoldable [ Tuple (Player Red) "svg/player-red.svg" ]
+            runSignal (render ctx <$> dims <*> assets <*> mPos <*> (renderedMaze dims) <*> game))
         mcanvas
