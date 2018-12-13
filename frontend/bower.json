@@ -13,7 +13,8 @@
     "purescript-affjax": "^7.0.0",
     "purescript-drawing": "/k/gits/purescript-drawing#4.0.1",
     "purescript-signal": "^10.1.0",
-    "purescript-generics-rep": "^6.1.0"
+    "purescript-generics-rep": "^6.1.0",
+    "purescript-websocket-moderate": "^4.0.0"
   },
   "devDependencies": {
     "purescript-psci-support": "^4.0.0"
