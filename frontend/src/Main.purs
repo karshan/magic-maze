@@ -9,6 +9,7 @@ import Types
 import Color (Color, white, rgb, rgba, black)
 import DOM (onDOMContentLoaded)
 import Data.Array ((..))
+import Data.Either (hush)
 import Data.Foldable (class Foldable, foldMap)
 import Data.FoldableWithIndex (foldWithIndexM, foldMapWithIndex, foldlWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
@@ -29,6 +30,12 @@ import Graphics.Drawing as D
 import Graphics.Drawing.Font as D
 import Signal (Signal, foldp, sampleOn, runSignal, constant, map2)
 import Signal.Channel (channel, send, subscribe)
+import Web.Socket.WebSocket
+import Web.Socket.Event.EventTypes
+import Web.Socket.Event.MessageEvent
+import Web.Event.EventTarget
+import Foreign
+import Control.Monad.Except
 
 translate' :: Point -> Drawing -> Drawing
 translate' { x, y } = translate x y
@@ -80,8 +87,7 @@ initialState =
                 Tuple Yellow (MapPoint { x: 2, y: 1 }),
                 Tuple Green (MapPoint { x: 1, y: 2 }),
                 Tuple Purple (MapPoint { x: 2, y: 2  })
-            ],
-            dragging: Nothing
+            ]
         }
 
 maybeStartDrag :: Inputs -> PlayerPositions -> Maybe DragState
@@ -95,26 +101,37 @@ maybeStartDrag i players =
      (First Nothing)
      players
 
-dropPlayer :: Inputs -> DragState -> PlayerPositions -> PlayerPositions
+dropPlayer :: Inputs -> DragState -> { playerColor :: PlayerColor, playerPosition :: MapPoint }
 dropPlayer i { playerColor, dragPoint } =
-  Map.update (const $ Just $ screenToMap i.dims
-                (ScreenPoint $ toPoint i.mousePos - dragPoint + GFX.playerCenterT))
-    playerColor
+  let playerPosition = screenToMap i.dims
+                (ScreenPoint $ toPoint i.mousePos - dragPoint + GFX.playerCenterT)
+   in { playerColor, playerPosition }
+
+gameLogicWS :: Maybe String -> GameState -> GameState
+gameLogicWS _ g = g
 
 data DragCommand =
     StartDrag
   | EndDrag DragState
 
-gameLogic :: Inputs -> GameState -> GameState
-gameLogic i g =
+gameLogicPure :: Inputs -> GameState -> LocalState -> { l :: LocalState, msg :: Maybe String }
+gameLogicPure i g l =
   let dragCommand = unwrap $ (do
-        dragState <- First g.dragging
+        dragState <- First l.dragging
         guard (not i.mousePressed) (pure (EndDrag dragState))) <>
-        guard (isNothing g.dragging && i.mousePressed) (pure StartDrag)
+        guard (isNothing l.dragging && i.mousePressed) (pure StartDrag)
+      mkOut l msg = { l, msg }
   in case dragCommand of
-        Nothing -> g
-        Just StartDrag -> g { dragging = maybeStartDrag i g.players }
-        Just (EndDrag dragState) -> g { players = dropPlayer i dragState g.players, dragging = Nothing }
+        Nothing -> mkOut l Nothing
+        Just StartDrag -> mkOut (l { dragging = maybeStartDrag i g.players }) Nothing
+        Just (EndDrag dragState) ->
+           mkOut (l { dragging = Nothing }) (Just $ show $ dropPlayer i dragState)
+
+gameLogic :: { inputs :: Inputs, gameState :: GameState } -> LocalState -> Effect LocalState
+gameLogic { inputs, gameState } ol = do
+  let { l, msg } = gameLogicPure inputs gameState ol
+  maybe (pure unit) (\{ws, m} -> sendString ws m) ({ ws: _, m: _ } <$> inputs.ws <*> msg )
+  pure l
 
 drawCell :: DimensionPair -> Cells -> Int -> Int -> Cell -> Drawing
 drawCell dims maze x y cell =
@@ -177,17 +194,17 @@ renderMaze ctx maze { dims, assets } = do
 renderText :: Number -> Number -> Color -> String -> Drawing
 renderText x y c s = D.text (D.font D.monospace 12 mempty) x y (D.fillColor c) s
 
-render :: Context2D -> DimensionPair -> Assets -> CoordinatePair -> ImageData -> GameState -> Effect Unit
-render ctx dims assets mouse renderedMaze gs = do
+render :: Context2D -> DimensionPair -> Assets -> CoordinatePair -> ImageData -> GameState -> LocalState -> Effect Unit
+render ctx dims assets mouse renderedMaze gs l = do
   let highlight = screenToMap dims (toScreenPoint mouse)
-  let debugText = renderText 100.0 100.0 white (show gs.players)
+  let debugText = renderText 100.0 100.0 white (show l)
   let players =
         (foldMapWithIndex
           (\asset img ->
               case asset of
                 Player p ->
                     let mDragPoint = unwrap do
-                          ds <- First gs.dragging
+                          ds <- First l.dragging
                           guard (ds.playerColor == p) (pure ds.dragPoint)
                     in maybe mempty (\pos -> drawPlayer dims pos mDragPoint mouse img) (lookup p gs.players)
                 _ -> mempty)
@@ -215,6 +232,21 @@ loadAssets toLoad =
     (constant (Map.empty))
     toLoad
 
+-- TODO onMessage error logging
+createWebSocket :: String -> Effect ({ ws :: Signal (Maybe WebSocket), msg :: Signal (Maybe String) })
+createWebSocket url = do
+  wsChan <- channel Nothing
+  msgChan <- channel Nothing
+  ws <- create url []
+  onOpenL <- eventListener (\e -> send wsChan $ Just ws)
+  onMessageL <- eventListener
+    (\e -> send msgChan (do
+               msgE <- fromEvent e
+               hush $ runExcept $ readString $ data_ msgE))
+  addEventListener onOpen onOpenL false (toEventTarget ws)
+  addEventListener onMessage onMessageL false (toEventTarget ws)
+  pure $ { ws: subscribe wsChan, msg: subscribe msgChan }
+
 main :: Effect Unit
 main = onDOMContentLoaded do
     frames <- animationFrame
@@ -226,12 +258,16 @@ main = onDOMContentLoaded do
     dims <- windowDimensions
     mPos <- mousePos
     mPressed <- mouseButtonPressed MouseLeftButton
+    log "creating websocket"
+    { ws, msg } <- createWebSocket "ws://localhost:3030"
     maybe
         (log "error no canvas")
         (\canvas -> do
-            let inputs = { left: _, right: _, up: _, down: _, dims: _, mousePos: _, mousePressed: _ } <$>
-                          leftInputs <*> rightInputs <*> upInputs <*> downInputs <*> dims <*> mPos <*> mPressed
-            let game = foldp gameLogic initialState (sampleOn frames inputs)
+            let inputs = { left: _, right: _, up: _, down: _, dims: _, mousePos: _, mousePressed: _, ws: _ } <$>
+                          leftInputs <*> rightInputs <*> upInputs <*> downInputs <*> dims <*> mPos <*> mPressed <*> ws
+            let remoteGame = foldp gameLogicWS initialState msg
+            localGame <- foldEffect gameLogic { dragging: Nothing }
+                            ({ inputs: _, gameState: _ } <$> sampleOn frames inputs <*> remoteGame)
             ctx <- getContext2D canvas
             runSignal (resize canvas <$> dims)
             renderedMaze <- mapEffect (renderMaze ctx initialState.maze) -- TODO renderMaze <~ Signal Maze
@@ -243,5 +279,5 @@ main = onDOMContentLoaded do
                         Tuple Background "svg/background.svg"
                       ]
             let renderedMazeSignal = renderedMaze $ { dims: _, assets: _ } <$> dims <*> assets
-            runSignal (render ctx <$> dims <*> assets <*> mPos <*> renderedMazeSignal <*> game))
+            runSignal (render ctx <$> dims <*> assets <*> mPos <*> renderedMazeSignal <*> remoteGame <*> localGame))
         mcanvas

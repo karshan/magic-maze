@@ -10,6 +10,7 @@ import Data.Tuple (Tuple)
 import Graphics.Drawing (Point)
 import Graphics.Canvas (CanvasImageSource)
 import Signal.DOM (DimensionPair, CoordinatePair)
+import Web.Socket.WebSocket (WebSocket)
 
 type Rect  = { x :: Number, y :: Number, w :: Number, h :: Number }
 
@@ -26,11 +27,13 @@ type Inputs = {
   down :: Boolean,
   dims :: DimensionPair,
   mousePos :: CoordinatePair,
-  mousePressed :: Boolean
+  mousePressed :: Boolean,
+  ws :: Maybe (WebSocket)
 }
 
 type PlayerPositions = Map PlayerColor MapPoint
-type GameState = { maze :: Maze, players :: PlayerPositions, dragging :: Maybe DragState }
+type GameState = { maze :: Maze, players :: PlayerPositions }
+type LocalState = { dragging :: Maybe DragState }
 type DragState = { playerColor :: PlayerColor, dragPoint :: Point }
 
 newtype ScreenPoint = ScreenPoint Point

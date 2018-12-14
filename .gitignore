@@ -2,3 +2,5 @@
 magic-maze.cabal
 *~
 static/main.js
+magic-maze-backend
+pid
