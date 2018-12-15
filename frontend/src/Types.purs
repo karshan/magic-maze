@@ -1,6 +1,7 @@
 module Types where
 
 import Prelude
+import Data.Argonaut
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Show (genericShow)
 import Data.Int (toNumber)
@@ -20,21 +21,32 @@ type Cells = Map MapPoint Cell
 type Maze = { cells :: Cells, borders :: DirMap Int }
 type Cell = { walls :: { right :: Boolean, down :: Boolean }, walkable :: Boolean }
 
-type Inputs = {
-  left :: Boolean,
-  up :: Boolean,
-  right :: Boolean,
-  down :: Boolean,
-  dims :: DimensionPair,
-  mousePos :: CoordinatePair,
-  mousePressed :: Boolean,
-  ws :: Maybe (WebSocket)
-}
+type MouseInputs = { dims :: DimensionPair, mousePos :: CoordinatePair, mousePressed :: Boolean, ws :: Maybe (WebSocket) }
+data Inputs =
+    Mouse MouseInputs
+  | ServerMsg (Maybe String)
 
 type PlayerPositions = Map PlayerColor MapPoint
-type GameState = { maze :: Maze, players :: PlayerPositions }
-type LocalState = { dragging :: Maybe DragState }
+type GameState = { maze :: Maze, players :: PlayerPositions, dragging :: Maybe DragState }
 type DragState = { playerColor :: PlayerColor, dragPoint :: Point }
+
+data Command =
+  PlayerMove PlayerColor MapPoint
+derive instance eqCommand :: Eq Command
+derive instance ordCommand :: Ord Command
+instance encodeJsonCommand :: EncodeJson Command where
+  encodeJson c =
+    case c of
+      PlayerMove pColor pPos ->
+          "tag" := "PlayerMove"
+       ~> "color" := pColor
+       ~> "position" := pPos
+       ~> jsonEmptyObject
+
+
+
+toPoint :: { x :: Int, y :: Int } -> Point
+toPoint { x, y } = { x: toNumber x, y: toNumber y }
 
 newtype ScreenPoint = ScreenPoint Point
 instance semiringScreenPoint :: Semiring ScreenPoint where
@@ -53,6 +65,11 @@ derive instance eqMapPoint :: Eq MapPoint
 derive instance ordMapPoint :: Ord MapPoint
 derive instance genericMapPoint :: Generic MapPoint _
 instance showMapPoint :: Show MapPoint where show = genericShow
+instance encodeJsonMapPoint :: EncodeJson MapPoint where
+  encodeJson (MapPoint mp) =
+      "x" := mp.x
+   ~> "y" := mp.y
+   ~> jsonEmptyObject
 
 data PlayerColor =
     Red
@@ -63,6 +80,7 @@ derive instance eqPlayerColor :: Eq PlayerColor
 derive instance ordPlayerColor :: Ord PlayerColor
 derive instance genericPlayerColor :: Generic PlayerColor _
 instance showPlayerColor :: Show PlayerColor where show = genericShow
+instance encodeJsonPlayerColor :: EncodeJson PlayerColor where encodeJson = encodeJson <<< show
 
 
 data AssetName =
