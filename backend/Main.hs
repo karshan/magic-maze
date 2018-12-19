@@ -21,6 +21,9 @@ import Types
 
 type ServerState = Map Text Connection
 
+numClients :: MVar ServerState -> IO Int
+numClients = map length . readMVar
+
 addClient :: MVar ServerState -> Connection -> IO Text
 addClient mv conn = do
     name <- toS <$> replicateM 6 (chr . (`mod` 26) <$> randomIO)
@@ -50,6 +53,8 @@ main = do
                     a <- receiveData conn
                     putText a
                     print $ (eitherDecode (toS a) :: Either String Command)
+                    n <- numClients state
+                    putText $ "numClients: " <> show n
                     broadcast state a
 
         redirSlash :: Request -> Request

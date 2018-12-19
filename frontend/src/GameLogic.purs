@@ -2,7 +2,9 @@ module GameLogic where
 
 import Prelude
 import Control.Monad.Except
+import Data.Array
 import Data.Either
+import Data.Foldable
 import Data.FoldableWithIndex
 import Data.Map as Map
 import Data.Maybe
@@ -19,6 +21,7 @@ import Signal.DOM
 import Web.Socket.WebSocket as WS
 
 import Types
+import Tiles
 import Isometric
 import GFX as GFX
 
@@ -28,42 +31,67 @@ initialState =
         downWall = { right: false, down: true }
         rightWall = { right: true, down: false }
         rdWall = { right: true, down: true }
-    in
-        {
-            maze: {
-                cells: Map.fromFoldable [
-                    Tuple (MapPoint { x: 0, y: 0 }) { walls: rightWall, walkable: true },
-                    Tuple (MapPoint { x: 1, y: 0 }) { walls: noWalls, walkable: true },
-                    Tuple (MapPoint { x: 2, y: 0 }) { walls: downWall, walkable: true },
-                    Tuple (MapPoint { x: 3, y: 0 }) { walls: rightWall, walkable: true },
-                    Tuple (MapPoint { x: 0, y: 1 }) { walls: rightWall, walkable: true },
-                    Tuple (MapPoint { x: 1, y: 1 }) { walls: noWalls, walkable: true },
-                    Tuple (MapPoint { x: 2, y: 1 }) { walls: rightWall, walkable: true },
-                    Tuple (MapPoint { x: 3, y: 1 }) { walls: rightWall, walkable: true },
-                    Tuple (MapPoint { x: 0, y: 2 }) { walls: noWalls, walkable: true },
-                    Tuple (MapPoint { x: 1, y: 2 }) { walls: downWall, walkable: true },
-                    Tuple (MapPoint { x: 2, y: 2 }) { walls: rdWall, walkable: true },
-                    Tuple (MapPoint { x: 3, y: 2 }) { walls: noWalls, walkable: true },
-                    Tuple (MapPoint { x: 0, y: 3 }) { walls: downWall, walkable: true },
-                    Tuple (MapPoint { x: 1, y: 3 }) { walls: noWalls, walkable: true },
-                    Tuple (MapPoint { x: 2, y: 3 }) { walls: rdWall, walkable: true },
-                    Tuple (MapPoint { x: 3, y: 3 }) { walls: noWalls, walkable: false }
-                ],
-                borders: {
-                    left: 0,
-                    up: 0,
-                    right: 3,
-                    down: 3
-                }
-            },
-            players: Map.fromFoldable [
-                Tuple Red (MapPoint { x: 1, y: 1 }),
-                Tuple Yellow (MapPoint { x: 2, y: 1 }),
-                Tuple Green (MapPoint { x: 1, y: 2 }),
-                Tuple Purple (MapPoint { x: 2, y: 2  })
-            ],
-            dragging: Nothing
-        }
+    in {
+      maze: initialTile,
+      players: Map.fromFoldable [
+        Tuple Red (MapPoint { x: 1, y: 1 }),
+        Tuple Yellow (MapPoint { x: 2, y: 1 }),
+        Tuple Green (MapPoint { x: 1, y: 2 }),
+        Tuple Purple (MapPoint { x: 2, y: 2  })
+      ],
+      dragging: Nothing
+    }
+
+moveMapPoint :: MapPoint -> Dir -> MapPoint
+moveMapPoint (MapPoint { x,  y }) dir =
+  case dir of
+    Up -> MapPoint { x, y: y - 1 }
+    Down -> MapPoint { x, y: y + 1 }
+    Left -> MapPoint { x: x - 1, y }
+    Right -> MapPoint { x: x + 1, y }
+
+blockedByWall :: Maze -> MapPoint -> MapPoint -> Dir -> Boolean
+blockedByWall maze (MapPoint { x: cx, y: cy }) (MapPoint { x: tx, y: ty }) dir =
+  case dir of
+    Up -> any (\y -> maybe true (_.walls.down) $ Map.lookup (MapPoint { x: cx, y }) maze.cells) (ty..(cy - 1))
+    Down -> any (\y -> maybe true (_.walls.down) $ Map.lookup (MapPoint { x: cx, y }) maze.cells) (cy..(ty - 1))
+    Left -> any (\x -> maybe true (_.walls.right) $ Map.lookup (MapPoint { x, y: cy }) maze.cells) (tx..(cx - 1))
+    Right -> any (\x -> maybe true (_.walls.right) $ Map.lookup (MapPoint { x, y: cy }) maze.cells) (cx..(tx - 1))
+
+data Dir =
+    Up
+  | Down
+  | Left
+  | Right
+
+getDirection :: MapPoint -> MapPoint -> Maybe Dir
+getDirection (MapPoint { x: cx, y: cy }) (MapPoint { x: tx, y: ty }) =
+  if cx == tx then
+    if ty > cy then
+      Just Down
+    else if ty < cy then
+      Just Up
+    else
+      Nothing
+  else if cy == ty then
+    if tx > cx then
+      Just Right
+    else if tx < cx then
+      Just Left
+    else
+      Nothing
+  else
+    Nothing
+
+evalCommand :: Command -> GameState -> GameState
+evalCommand (PlayerMove pCol targetPos) gs = maybe gs identity (do
+  currentPos <- Map.lookup pCol gs.players
+  targetCell <- Map.lookup targetPos gs.maze.cells
+  guard targetCell.walkable (pure unit)
+  guard (not $ any (_ == targetPos) gs.players) (pure unit)
+  dir <- getDirection currentPos targetPos
+  guard (not $ blockedByWall gs.maze currentPos targetPos dir) (pure unit)
+  pure $ gs { players = Map.update (const $ Just targetPos) pCol gs.players })
 
 maybeStartDrag :: MouseInputs -> PlayerPositions -> Maybe DragState
 maybeStartDrag i players =
@@ -77,11 +105,11 @@ maybeStartDrag i players =
      players
 
 -- TODO data ClientToServerCommand = PlayerMove _ _ | ...
-dropPlayer :: MouseInputs -> DragState -> { playerColor :: PlayerColor, playerPosition :: MapPoint }
+dropPlayer :: MouseInputs -> DragState -> Command
 dropPlayer i { playerColor, dragPoint } =
   let playerPosition = screenToMap i.dims
                 (ScreenPoint $ toPoint i.mousePos - dragPoint + GFX.playerCenterT)
-   in { playerColor, playerPosition }
+   in PlayerMove playerColor playerPosition
 
 data DragCommand =
     StartDrag
@@ -98,14 +126,13 @@ gameLogicPure mouseInputs gameState =
         Nothing -> mkOut gameState Nothing
         Just StartDrag -> mkOut (gameState { dragging = maybeStartDrag mouseInputs gameState.players }) Nothing
         Just (EndDrag dragState) ->
-          let { playerColor, playerPosition } = dropPlayer mouseInputs dragState
+          let command = dropPlayer mouseInputs dragState
           in
             mkOut
-              (gameState { 
-                players = Map.update (const $ Just playerPosition) playerColor gameState.players,
+              (evalCommand command gameState {
                 dragging = Nothing 
               }) 
-              (Just $ PlayerMove playerColor playerPosition)
+              (Just $ command)
 
 gameLogic :: Inputs -> GameState -> Effect GameState
 gameLogic inputs gameState =
@@ -119,8 +146,11 @@ gameLogic inputs gameState =
             m <- note Nothing msgToSend
             pure { ws: ws, m: genericEncodeJSON defaultOptions m })
       pure nextGameState
-    ServerMsg mMsg ->
+    ServerMsg mMsg -> do
       -- TODO error logging
       let (decodedMsg :: Maybe Command) =
             hush <<< runExcept <<< genericDecodeJSON defaultOptions =<< mMsg
-      in log (show decodedMsg) *> pure gameState
+      log (show decodedMsg)
+      maybe (pure gameState)
+        (pure <<< flip evalCommand gameState)
+        decodedMsg
