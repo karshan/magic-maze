@@ -20,9 +20,35 @@ type Rect  = { x :: Number, y :: Number, w :: Number, h :: Number }
 
 type DirMap v = { left :: v, up :: v, right :: v, down :: v }
 
+data Dir =
+    N
+  | S
+  | W
+  | E
+derive instance eqDir :: Eq Dir
+derive instance ordDir :: Ord Dir
+derive instance genericDir :: Generic Dir _
+instance showDir :: Show Dir where show = genericShow
+instance encodeDir :: Encode Dir where
+  encode = genericEncode defaultOptions
+instance decodeDir :: Decode Dir where
+  decode = genericDecode defaultOptions
+
+data SpecialTile =
+    STUnwalkable
+  | STExplore PlayerColor Dir
+derive instance eqSpecialTile :: Eq SpecialTile
+derive instance ordSpecialTile :: Ord SpecialTile
+derive instance genericSpecialTile :: Generic SpecialTile _
+instance showSpecialTile :: Show SpecialTile where show = genericShow
+instance encodeSpecialTile :: Encode SpecialTile where
+  encode = genericEncode defaultOptions
+instance decodeSpecialTile :: Decode SpecialTile where
+  decode = genericDecode defaultOptions
+
 type Cells = Map MapPoint Cell
 type Maze = { cells :: Cells, borders :: DirMap Int }
-type Cell = { walls :: { right :: Boolean, down :: Boolean }, walkable :: Boolean }
+type Cell = { walls :: { right :: Boolean, down :: Boolean }, special :: Maybe SpecialTile }
 
 type MouseInputs = { dims :: DimensionPair, mousePos :: CoordinatePair, mousePressed :: Boolean, ws :: Maybe (WebSocket) }
 data Inputs =
@@ -80,8 +106,9 @@ instance decodeMapPoint :: Decode MapPoint where
   decode = genericDecode defaultOptions
 
 data AssetName =
-    Player PlayerColor
-  | Background
+    APlayer PlayerColor
+  | AExplore PlayerColor
+  | ABackground
 derive instance eqAssetName :: Eq AssetName
 derive instance ordAssetName :: Ord AssetName
 derive instance genericAssetName :: Generic AssetName _

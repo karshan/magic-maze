@@ -1,29 +1,29 @@
 module GameLogic where
 
-import Prelude
 import Control.Monad.Except
 import Data.Array
 import Data.Either
 import Data.Foldable
 import Data.FoldableWithIndex
-import Data.Map as Map
 import Data.Maybe
 import Data.Maybe.First
 import Data.Monoid
 import Data.Newtype
 import Data.Tuple
 import Effect
-import Effect.Console (log)
 import Foreign.Generic
+import Isometric
+import Prelude
+import Signal.DOM
+import Tiles
+import Types
+
+import Data.Map as Map
+import Effect.Console (log)
+import GFX as GFX
 import Signal.Channel (Channel)
 import Signal.Channel (send) as Chan
-import Signal.DOM
 import Web.Socket.WebSocket as WS
-
-import Types
-import Tiles
-import Isometric
-import GFX as GFX
 
 initialState :: GameState
 initialState =
@@ -45,39 +45,33 @@ initialState =
 moveMapPoint :: MapPoint -> Dir -> MapPoint
 moveMapPoint (MapPoint { x,  y }) dir =
   case dir of
-    Up -> MapPoint { x, y: y - 1 }
-    Down -> MapPoint { x, y: y + 1 }
-    Left -> MapPoint { x: x - 1, y }
-    Right -> MapPoint { x: x + 1, y }
+    N -> MapPoint { x, y: y - 1 }
+    S -> MapPoint { x, y: y + 1 }
+    W -> MapPoint { x: x - 1, y }
+    E -> MapPoint { x: x + 1, y }
 
 blockedByWall :: Maze -> MapPoint -> MapPoint -> Dir -> Boolean
 blockedByWall maze (MapPoint { x: cx, y: cy }) (MapPoint { x: tx, y: ty }) dir =
   case dir of
-    Up -> any (\y -> maybe true (_.walls.down) $ Map.lookup (MapPoint { x: cx, y }) maze.cells) (ty..(cy - 1))
-    Down -> any (\y -> maybe true (_.walls.down) $ Map.lookup (MapPoint { x: cx, y }) maze.cells) (cy..(ty - 1))
-    Left -> any (\x -> maybe true (_.walls.right) $ Map.lookup (MapPoint { x, y: cy }) maze.cells) (tx..(cx - 1))
-    Right -> any (\x -> maybe true (_.walls.right) $ Map.lookup (MapPoint { x, y: cy }) maze.cells) (cx..(tx - 1))
-
-data Dir =
-    Up
-  | Down
-  | Left
-  | Right
+    N -> any (\y -> maybe true (_.walls.down) $ Map.lookup (MapPoint { x: cx, y }) maze.cells) (ty..(cy - 1))
+    S -> any (\y -> maybe true (_.walls.down) $ Map.lookup (MapPoint { x: cx, y }) maze.cells) (cy..(ty - 1))
+    W -> any (\x -> maybe true (_.walls.right) $ Map.lookup (MapPoint { x, y: cy }) maze.cells) (tx..(cx - 1))
+    E -> any (\x -> maybe true (_.walls.right) $ Map.lookup (MapPoint { x, y: cy }) maze.cells) (cx..(tx - 1))
 
 getDirection :: MapPoint -> MapPoint -> Maybe Dir
 getDirection (MapPoint { x: cx, y: cy }) (MapPoint { x: tx, y: ty }) =
   if cx == tx then
     if ty > cy then
-      Just Down
+      Just S
     else if ty < cy then
-      Just Up
+      Just N
     else
       Nothing
   else if cy == ty then
     if tx > cx then
-      Just Right
+      Just E
     else if tx < cx then
-      Just Left
+      Just W
     else
       Nothing
   else
@@ -87,7 +81,7 @@ evalCommand :: Command -> GameState -> GameState
 evalCommand (PlayerMove pCol targetPos) gs = maybe gs identity (do
   currentPos <- Map.lookup pCol gs.players
   targetCell <- Map.lookup targetPos gs.maze.cells
-  guard targetCell.walkable (pure unit)
+  guard (targetCell.special /= (Just STUnwalkable)) (pure unit)
   guard (not $ any (_ == targetPos) gs.players) (pure unit)
   dir <- getDirection currentPos targetPos
   guard (not $ blockedByWall gs.maze currentPos targetPos dir) (pure unit)

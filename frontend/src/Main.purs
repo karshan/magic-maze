@@ -33,7 +33,7 @@ import Signal.Channel (channel, send, subscribe)
 import Signal.WebSocket (create) as WS
 
 import GameLogic
-import GFX.Cell (drawCell, drawCellWall)
+import GFX.Cell (drawCell, drawCellWall, drawCellExplore)
 
 translate' :: Point -> Drawing -> Drawing
 translate' { x, y } = translate x y
@@ -45,7 +45,6 @@ keycodes = {
         right: 39,
         down: 40
     }
-
 
 drawPlayer :: DimensionPair -> MapPoint -> Maybe Point -> CoordinatePair -> CanvasImageSource -> Drawing
 drawPlayer dims playerPosition mDragPoint mouse canvasImage =
@@ -74,9 +73,17 @@ renderMaze :: Context2D -> Maze -> { dims :: DimensionPair, assets :: Assets } -
 renderMaze ctx maze { dims, assets } = do
   D.render ctx (filled (fillColor (rgba 0 0 0 0.0)) (rectangle 0.0 0.0 (toNumber dims.w) (toNumber dims.h)))
   let cells = forAllCells maze (drawCell dims maze.cells)
+  let exploreCells =
+        forAllCells maze
+          (\x y cell ->
+            case cell.special of
+                 Nothing -> mempty
+                 Just STUnwalkable -> mempty
+                 Just (STExplore col dir) ->
+                   drawCellExplore dir dims x y (maybe mempty image (lookup (AExplore col) assets)))
   let walls = forAllCells maze (drawCellWall dims maze.cells)
-  let bg = maybe mempty image (lookup Background assets)
-  D.render ctx (GFX.background dims bg <> cells <> walls)
+  let bg = maybe mempty image (lookup ABackground assets)
+  D.render ctx (GFX.background dims bg <> cells <> exploreCells <> walls)
   getImageData ctx 0.0 0.0 (toNumber dims.w) (toNumber dims.h)
 
 renderText :: Number -> Number -> Color -> String -> Drawing
@@ -86,11 +93,12 @@ render :: Context2D -> DimensionPair -> Assets -> CoordinatePair -> ImageData ->
 render ctx dims assets mouse renderedMaze gameState = do
   let highlight = screenToMap dims (toScreenPoint mouse)
   let debugText = renderText 100.0 100.0 white (show gameState.dragging)
+  -- TODO draw dragging player first, then in descending order by y coordinate
   let players =
         (foldMapWithIndex
           (\asset img ->
               case asset of
-                Player p ->
+                APlayer p ->
                     let mDragPoint = unwrap do
                           ds <- First gameState.dragging
                           guard (ds.playerColor == p) (pure ds.dragPoint)
@@ -144,11 +152,15 @@ main = onDOMContentLoaded do
             runSignal (resize canvas <$> dims)
             renderedMaze <- mapEffect (renderMaze ctx initialState.maze) -- TODO renderMaze <~ Signal Maze
             assets <- loadAssets $ Map.fromFoldable [
-                        Tuple (Player Red) "svg/player-red.svg",
-                        Tuple (Player Yellow) "svg/player-yellow.svg",
-                        Tuple (Player Green) "svg/player-green.svg",
-                        Tuple (Player Purple) "svg/player-purple.svg",
-                        Tuple Background "svg/background.svg"
+                        Tuple (APlayer Red) "svg/player-red.svg",
+                        Tuple (APlayer Yellow) "svg/player-yellow.svg",
+                        Tuple (APlayer Green) "svg/player-green.svg",
+                        Tuple (APlayer Purple) "svg/player-purple.svg",
+                        Tuple (AExplore Red) "svg/explore-red.svg",
+                        Tuple (AExplore Yellow) "svg/explore-yellow.svg",
+                        Tuple (AExplore Green) "svg/explore-green.svg",
+                        Tuple (AExplore Purple) "svg/explore-purple.svg",
+                        Tuple ABackground "svg/background.svg"
                       ]
             let renderedMazeSignal = renderedMaze $ { dims: _, assets: _ } <$> dims <*> assets
             runSignal (render ctx <$> dims <*> assets <*> mPos <*> renderedMazeSignal <*> game))

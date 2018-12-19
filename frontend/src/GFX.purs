@@ -13,11 +13,11 @@ import Signal.DOM (DimensionPair)
 type ColorSet = { base :: Color, light1 :: Color, light2 :: Color }
 
 cell' :: Boolean -> Boolean -> Boolean -> Drawing
-cell' walkable =
-  if walkable then
-    cell (rgb 0xE6 0xF1 0xF8) (rgb 0xC0 0xDB 0xEC)
-  else
+cell' unwalkable =
+  if unwalkable then
     cell (rgb 0x10 0x10 0x10) (rgb 0x00 0x00 0x00)
+  else
+    cell (rgb 0xE6 0xF1 0xF8) (rgb 0xC0 0xDB 0xEC)
 
 -- All translations are relative to cell NW corner unless specified
 cell :: Color -> Color -> Boolean -> Boolean -> Drawing
