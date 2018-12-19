@@ -1,9 +1,12 @@
 module Types where
 
 import Prelude
-import Data.Argonaut
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Show (genericShow)
+import Foreign
+import Foreign.Class
+import Foreign.Generic
+import Foreign.Generic.Types
 import Data.Int (toNumber)
 import Data.Maybe (Maybe)
 import Data.Map (Map)
@@ -34,16 +37,22 @@ data Command =
   PlayerMove PlayerColor MapPoint
 derive instance eqCommand :: Eq Command
 derive instance ordCommand :: Ord Command
-instance encodeJsonCommand :: EncodeJson Command where
-  encodeJson c =
-    case c of
-      PlayerMove pColor pPos ->
-          "tag" := "PlayerMove"
-       ~> "color" := pColor
-       ~> "position" := pPos
-       ~> jsonEmptyObject
+derive instance genericCommand :: Generic Command _
+instance showComand :: Show Command where show = genericShow
 
-
+data PlayerColor =
+    Red
+  | Yellow
+  | Green
+  | Purple
+derive instance eqPlayerColor :: Eq PlayerColor
+derive instance ordPlayerColor :: Ord PlayerColor
+derive instance genericPlayerColor :: Generic PlayerColor _
+instance showPlayerColor :: Show PlayerColor where show = genericShow
+instance encodePlayerColor :: Encode PlayerColor where
+  encode = genericEncode defaultOptions
+instance decodePlayerColor :: Decode PlayerColor where
+  decode = genericDecode defaultOptions
 
 toPoint :: { x :: Int, y :: Int } -> Point
 toPoint { x, y } = { x: toNumber x, y: toNumber y }
@@ -65,23 +74,10 @@ derive instance eqMapPoint :: Eq MapPoint
 derive instance ordMapPoint :: Ord MapPoint
 derive instance genericMapPoint :: Generic MapPoint _
 instance showMapPoint :: Show MapPoint where show = genericShow
-instance encodeJsonMapPoint :: EncodeJson MapPoint where
-  encodeJson (MapPoint mp) =
-      "x" := mp.x
-   ~> "y" := mp.y
-   ~> jsonEmptyObject
-
-data PlayerColor =
-    Red
-  | Yellow
-  | Green
-  | Purple
-derive instance eqPlayerColor :: Eq PlayerColor
-derive instance ordPlayerColor :: Ord PlayerColor
-derive instance genericPlayerColor :: Generic PlayerColor _
-instance showPlayerColor :: Show PlayerColor where show = genericShow
-instance encodeJsonPlayerColor :: EncodeJson PlayerColor where encodeJson = encodeJson <<< show
-
+instance encodeMapPoint :: Encode MapPoint where
+  encode = genericEncode defaultOptions
+instance decodeMapPoint :: Decode MapPoint where
+  decode = genericDecode defaultOptions
 
 data AssetName =
     Player PlayerColor

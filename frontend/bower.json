@@ -11,9 +11,10 @@
     "purescript-console": "^4.2.0",
     "purescript-effect": "^2.0.0",
     "purescript-affjax": "^7.0.0",
-    "purescript-drawing": "/home/karshan/gits/purescript-drawing#4.0.1",
+    "purescript-drawing": "git://github.com/karshan/purescript-drawing#5167da6df3ca50cc3ec2ed18288f1d77e9c2b422",
     "purescript-signal": "^10.1.0",
     "purescript-generics-rep": "^6.1.0",
+    "purescript-foreign-generic": "git://github.com/karshan/purescript-foreign-generic#e0a38727a6a7fe9691a07ba7efad6cf9c69adfc0",
     "purescript-websocket-moderate": "^4.0.0",
     "purescript-web-socket": "^1.0.0"
   },

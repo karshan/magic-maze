@@ -1,7 +1,9 @@
 #!/bin/sh
 while [ 1 ]; do
-  bash -c 'echo $$ > pid; exec ./magic-maze-backend 3030'
+  ./magic-maze-backend 3030 &
+  PID=$!
   inotifywait -e MODIFY $(find backend -name "*.hs")
   stack build --copy-bins
-  kill -s INT $(cat pid | tr -d '\n')
+  kill -s INT $PID
+  sleep 1
 done

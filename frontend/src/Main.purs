@@ -31,7 +31,6 @@ import Graphics.Drawing.Font as D
 import Signal (Signal, foldp, sampleOn, runSignal, constant, map2, merge)
 import Signal.Channel (channel, send, subscribe)
 import Signal.WebSocket (create) as WS
-import Web.Socket.WebSocket (sendString) as WS
 
 import GameLogic
 import GFX.Cell (drawCell, drawCellWall)
@@ -99,7 +98,7 @@ render ctx dims assets mouse renderedMaze gameState = do
                 _ -> mempty)
         assets)
   putImageData ctx renderedMaze 0.0 0.0
-  D.render ctx (players <> debugText)
+  D.render ctx players
 
 resize :: CanvasElement -> DimensionPair -> Effect Unit
 resize canvas dims = do

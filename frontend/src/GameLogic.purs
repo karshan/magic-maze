@@ -1,7 +1,7 @@
 module GameLogic where
 
 import Prelude
-import Data.Argonaut
+import Control.Monad.Except
 import Data.Either
 import Data.FoldableWithIndex
 import Data.Map as Map
@@ -12,6 +12,7 @@ import Data.Newtype
 import Data.Tuple
 import Effect
 import Effect.Console (log)
+import Foreign.Generic
 import Signal.Channel (Channel)
 import Signal.Channel (send) as Chan
 import Signal.DOM
@@ -111,11 +112,15 @@ gameLogic inputs gameState =
   case inputs of
     Mouse mouseInputs -> do
       let { nextGameState, msgToSend } = gameLogicPure mouseInputs gameState
-      either log
+      either (maybe (pure unit) log)
         (\{ ws, m } -> WS.sendString ws m)
         (do
-            ws <- note "WebSocket not open" mouseInputs.ws
-            let m = stringify (encodeJson msgToSend)
-            pure { ws, m })
+            ws <- note (Just "WebSocket not open") mouseInputs.ws
+            m <- note Nothing msgToSend
+            pure { ws: ws, m: genericEncodeJSON defaultOptions m })
       pure nextGameState
-    ServerMsg msg -> log (show msg) *> pure gameState
+    ServerMsg mMsg ->
+      -- TODO error logging
+      let (decodedMsg :: Maybe Command) =
+            hush <<< runExcept <<< genericDecodeJSON defaultOptions =<< mMsg
+      in log (show decodedMsg) *> pure gameState

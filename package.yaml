@@ -26,8 +26,10 @@ executables:
     dependencies:
     - base >= 4.7 && < 5
     - aeson
+    - containers
     - http-types
     - protolude
+    - random
     - wai
     - wai-app-static
     - wai-websockets
