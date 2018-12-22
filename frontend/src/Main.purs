@@ -54,33 +54,19 @@ drawPlayer dims playerPosition mDragPoint mouse canvasImage =
         mDragPoint)
     (image canvasImage)
 
-forAllCells :: forall m. Monoid m => Maze -> (Int -> Int -> Cell -> m) -> m
-forAllCells maze f =
-  foldMap
-    (\x ->
-      foldMap
-        (\y ->
-          maybe
-            mempty
-            (f x y)
-            (lookup (MapPoint { x, y }) maze.cells))
-        (maze.borders.up .. maze.borders.down))
-    (maze.borders.left .. maze.borders.right)
-
 -- TODO Render in large offscreen canvas then never re-render until maze changes.
 --      Then we don't need to clear the background, it will be transparent by default.
-renderMaze :: Context2D -> Maze -> { dims :: DimensionPair, assets :: Assets } -> Effect ImageData
-renderMaze ctx maze { dims, assets } = do
+renderMaze :: Context2D -> { maze :: Maze, dims :: DimensionPair, assets :: Assets } -> Effect ImageData
+renderMaze ctx { maze, dims, assets } = do
   D.render ctx (filled (fillColor (rgba 0 0 0 0.0)) (rectangle 0.0 0.0 (toNumber dims.w) (toNumber dims.h)))
   let cells = forAllCells maze (drawCell dims maze.cells)
   let exploreCells =
         forAllCells maze
           (\x y cell ->
             case cell.special of
-                 Nothing -> mempty
-                 Just STUnwalkable -> mempty
                  Just (STExplore col dir) ->
-                   drawCellExplore dir dims x y (maybe mempty image (lookup (AExplore col) assets)))
+                   drawCellExplore dir dims x y (maybe mempty image (lookup (AExplore col) assets))
+                 _ -> mempty)
   let walls = forAllCells maze (drawCellWall dims maze.cells)
   let bg = maybe mempty image (lookup ABackground assets)
   D.render ctx (GFX.background dims bg <> cells <> exploreCells <> walls)
@@ -92,7 +78,7 @@ renderText x y c s = D.text (D.font D.monospace 12 mempty) x y (D.fillColor c) s
 render :: Context2D -> DimensionPair -> Assets -> CoordinatePair -> ImageData -> GameState -> Effect Unit
 render ctx dims assets mouse renderedMaze gameState = do
   let highlight = screenToMap dims (toScreenPoint mouse)
-  let debugText = renderText 100.0 100.0 white (show gameState.dragging)
+  let debugText = renderText 100.0 100.0 white (show $ gameState.maze.borders)
   -- TODO draw dragging player first, then in descending order by y coordinate
   let players =
         (foldMapWithIndex
@@ -106,7 +92,7 @@ render ctx dims assets mouse renderedMaze gameState = do
                 _ -> mempty)
         assets)
   putImageData ctx renderedMaze 0.0 0.0
-  D.render ctx players
+  D.render ctx (players <> debugText)
 
 resize :: CanvasElement -> DimensionPair -> Effect Unit
 resize canvas dims = do
@@ -144,13 +130,14 @@ main = onDOMContentLoaded do
     maybe
         (log "error no canvas")
         (\canvas -> do
-            let mouseInputs = { dims: _, mousePos: _, mousePressed: _, ws: _ } <$>
+            let mouseMove = { dims: _, mousePos: _, mousePressed: _, ws: _ } <$>
                            dims <*> mPos <*> mPressed <*> ws
-            let inputs = merge (Mouse <$> mouseInputs) (ServerMsg <$> serverMsg)
+            let inputs = merge (Mouse <$> sampleOn mPressed mouseMove) (ServerMsg <$> serverMsg)
             game <- foldEffect gameLogic initialState inputs
             ctx <- getContext2D canvas
             runSignal (resize canvas <$> dims)
-            renderedMaze <- mapEffect (renderMaze ctx initialState.maze) -- TODO renderMaze <~ Signal Maze
+            renderedMaze <- mapEffect (renderMaze ctx)
+            -- TODO show loading screen, wait for all assets to load then render
             assets <- loadAssets $ Map.fromFoldable [
                         Tuple (APlayer Red) "svg/player-red.svg",
                         Tuple (APlayer Yellow) "svg/player-yellow.svg",
@@ -162,6 +149,8 @@ main = onDOMContentLoaded do
                         Tuple (AExplore Purple) "svg/explore-purple.svg",
                         Tuple ABackground "svg/background.svg"
                       ]
-            let renderedMazeSignal = renderedMaze $ { dims: _, assets: _ } <$> dims <*> assets
+            -- FIXME game sampleOn ExploreCommand
+            let renderedMazeSignal = renderedMaze $ { maze: _, dims: _, assets: _ } <$> (_.maze <$> game) <*> dims <*> assets
+            -- TODO sampleOn animationFrame ?
             runSignal (render ctx <$> dims <*> assets <*> mPos <*> renderedMazeSignal <*> game))
         mcanvas

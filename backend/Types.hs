@@ -6,6 +6,7 @@ import PSBridge
 
 data Command =
     PlayerMove PlayerColor MapPoint
+  | Explore MapPoint Dir
       deriving (Eq, Ord, Show)
 
 data PlayerColor =
@@ -15,8 +16,16 @@ data PlayerColor =
   | Purple
       deriving (Eq, Ord, Show)
 
+data Dir =
+    N
+  | E
+  | S
+  | W
+      deriving (Eq, Ord, Show)
+
 data MapPoint = MapPoint { x :: Int, y :: Int } deriving (Eq, Ord, Show)
 
+$(deriveJSON purescriptOptions ''Dir)
 $(deriveJSON purescriptOptions ''MapPoint)
 $(deriveJSON purescriptOptions ''PlayerColor)
 $(deriveJSON purescriptOptions ''Command)

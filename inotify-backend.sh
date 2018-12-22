@@ -4,6 +4,7 @@ while [ 1 ]; do
   PID=$!
   inotifywait -e MODIFY $(find backend -name "*.hs")
   stack build --copy-bins
+  notify-send "backend built: $?"
   kill -s INT $PID
   sleep 1
 done

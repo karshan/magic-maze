@@ -1,6 +1,7 @@
 module GameLogic where
 
 import Control.Monad.Except
+import Control.Monad.State
 import Data.Array
 import Data.Either
 import Data.Foldable
@@ -21,6 +22,7 @@ import Types
 import Data.Map as Map
 import Effect.Console (log)
 import GFX as GFX
+import GFX.Cell (evalExploreBBox)
 import Signal.Channel (Channel)
 import Signal.Channel (send) as Chan
 import Web.Socket.WebSocket as WS
@@ -85,8 +87,12 @@ evalCommand (PlayerMove pCol targetPos) gs = maybe gs identity (do
   guard (not $ any (_ == targetPos) gs.players) (pure unit)
   dir <- getDirection currentPos targetPos
   guard (not $ blockedByWall gs.maze currentPos targetPos dir) (pure unit)
+  -- FIXME guard (not $ blockedByPlayer gs.maze gs.players currentPos targetPos dir)
   pure $ gs { players = Map.update (const $ Just targetPos) pCol gs.players })
+evalCommand (Explore mp dir) gs =
+  maybe gs (gs { maze = _ }) $ mergeTiles gs.maze 0 mp dir
 
+-- TODO evalBBox in descending order of player y coordinate
 maybeStartDrag :: MouseInputs -> PlayerPositions -> Maybe DragState
 maybeStartDrag i players =
   unwrap $
@@ -98,7 +104,6 @@ maybeStartDrag i players =
      (First Nothing)
      players
 
--- TODO data ClientToServerCommand = PlayerMove _ _ | ...
 dropPlayer :: MouseInputs -> DragState -> Command
 dropPlayer i { playerColor, dragPoint } =
   let playerPosition = screenToMap i.dims
@@ -109,30 +114,57 @@ data DragCommand =
     StartDrag
   | EndDrag DragState
 
-gameLogicPure :: MouseInputs -> GameState -> { nextGameState :: GameState, msgToSend :: Maybe Command }
-gameLogicPure mouseInputs gameState =
+-- FIXME explore and drag can occur on the same mouse press
+-- only one should occur on one mousepress
+gameLogicState :: MouseInputs -> State GameState (Maybe Command)
+gameLogicState mouseInputs = do
+  explore <- handleExplore mouseInputs
+  drag <- handleDrag mouseInputs
+  pure $ unwrap $ First drag <> First explore
+
+handleExplore :: MouseInputs -> State GameState (Maybe Command)
+handleExplore mouseInputs =
+  if mouseInputs.mousePressed then do
+    gameState <- get 
+    pure $ unwrap $ forAllCells gameState.maze 
+              (\x y cell ->
+                  case cell.special of
+                       (Just (STExplore color dir)) ->
+                          -- FIXME only expore if neighboring cell is empty
+                          if Map.lookup color gameState.players == Just (MapPoint { x, y }) then
+                            let mp = MapPoint { x, y }
+                                m = First $ evalExploreBBox mouseInputs.dims dir mp (toScreenPoint mouseInputs.mousePos)
+                            in const (Explore mp dir) <$> m
+                          else
+                            mempty
+                       _ -> mempty)
+  else
+    pure Nothing
+
+handleDrag :: MouseInputs -> State GameState (Maybe Command)
+handleDrag mouseInputs = do
+  gameState <- get
   let dragCommand = unwrap $ (do
         dragState <- First gameState.dragging
         guard (not mouseInputs.mousePressed) (pure (EndDrag dragState))) <>
         guard (isNothing gameState.dragging && mouseInputs.mousePressed) (pure StartDrag)
-      mkOut = { nextGameState: _, msgToSend: _ }
-  in case dragCommand of
-        Nothing -> mkOut gameState Nothing
-        Just StartDrag -> mkOut (gameState { dragging = maybeStartDrag mouseInputs gameState.players }) Nothing
-        Just (EndDrag dragState) ->
+  case dragCommand of
+        Nothing -> pure Nothing
+        Just StartDrag -> do
+          put (gameState { dragging = maybeStartDrag mouseInputs gameState.players })
+          pure Nothing
+        Just (EndDrag dragState) -> do
           let command = dropPlayer mouseInputs dragState
-          in
-            mkOut
-              (evalCommand command gameState {
+          put (evalCommand command gameState {
                 dragging = Nothing 
               }) 
-              (Just $ command)
+          pure (Just command)
 
 gameLogic :: Inputs -> GameState -> Effect GameState
 gameLogic inputs gameState =
   case inputs of
     Mouse mouseInputs -> do
-      let { nextGameState, msgToSend } = gameLogicPure mouseInputs gameState
+      let (Tuple msgToSend nextGameState) = runState (gameLogicState mouseInputs) gameState
       either (maybe (pure unit) log)
         (\{ ws, m } -> WS.sendString ws m)
         (do

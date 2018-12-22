@@ -3,15 +3,16 @@ module Isometric
     tileHalfWidth, tileHalfHeight
   , screenToMap, mapToScreen, mapToScreenD
   , evalBBox
+  , evalIsoBBox
   )
   where
 
-import Prelude
-import Signal.DOM
 import Data.Int
 import Data.Maybe
-import Types
 import Graphics.Drawing
+import Prelude
+import Signal.DOM
+import Types
 
 tileHalfWidth :: Number
 tileHalfWidth = 64.0
@@ -60,3 +61,19 @@ evalBBox { x, y, w, h } (ScreenPoint p) =
     Just { x: p.x - x, y: p.y - y }
   else
     Nothing
+
+-- If the given ScreenPoint is within the Cell at the given MapPoint 
+-- then Just (dx, dy) where dx, dy is the position of the ScreenPoint
+-- relative to the cell's NW corner
+-- else Nothing
+evalIsoBBox :: DimensionPair -> MapPoint -> ScreenPoint -> Maybe Point
+evalIsoBBox dims mp (ScreenPoint { x, y }) =
+  let ScreenPoint c = mapToScreen dims mp
+      lineSide x0 y0 m = y - y0 - (m * (x - x0))
+  in if lineSide c.x c.y 0.5 > 0.0 && -- N Wall
+        lineSide c.x c.y (-0.5) > 0.0 && -- W wall
+        lineSide (c.x - tileHalfWidth) (c.y + tileHalfHeight) 0.5 < 0.0 && -- S wall
+        lineSide (c.x + tileHalfWidth) (c.y + tileHalfHeight) (-0.5) < 0.0 then -- E wall
+        Just { x: x - c.x, y: y - c.y }
+     else
+        Nothing
