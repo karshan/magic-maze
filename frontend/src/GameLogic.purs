@@ -13,6 +13,7 @@ import Data.Newtype
 import Data.Tuple
 import Effect
 import Foreign.Generic
+import Graphics.Drawing
 import Isometric
 import Prelude
 import Signal.DOM
@@ -28,12 +29,7 @@ import Signal.Channel (send) as Chan
 import Web.Socket.WebSocket as WS
 
 initialState :: GameState
-initialState =
-    let noWalls = { right: false, down: false }
-        downWall = { right: false, down: true }
-        rightWall = { right: true, down: false }
-        rdWall = { right: true, down: true }
-    in {
+initialState = {
       maze: initialTile,
       players: Map.fromFoldable [
         Tuple Red (MapPoint { x: 1, y: 1 }),
@@ -41,7 +37,8 @@ initialState =
         Tuple Green (MapPoint { x: 1, y: 2 }),
         Tuple Purple (MapPoint { x: 2, y: 2  })
       ],
-      dragging: Nothing
+      dragging: Nothing,
+      renderOffset: { x: 1715.0, y: 840.0 } -- TODO calculate from offscreenDims
     }
 
 moveMapPoint :: MapPoint -> Dir -> MapPoint
@@ -93,21 +90,21 @@ evalCommand (Explore mp dir) gs =
   maybe gs (gs { maze = _ }) $ mergeTiles gs.maze 0 mp dir
 
 -- TODO evalBBox in descending order of player y coordinate
-maybeStartDrag :: MouseInputs -> PlayerPositions -> Maybe DragState
+maybeStartDrag :: RealMouseInputs -> PlayerPositions -> Maybe DragState
 maybeStartDrag i players =
   unwrap $
    foldlWithIndex
      (\playerColor accum position ->
          accum <>
            map ({ playerColor: playerColor, dragPoint: _ })
-             (First $ evalBBox (GFX.playerBBox i.dims position) (toScreenPoint i.mousePos)))
+             (First $ evalBBox (GFX.playerBBox i.offscreenDims position) (ScreenPoint i.realMousePos)))
      (First Nothing)
      players
 
-dropPlayer :: MouseInputs -> DragState -> Command
+dropPlayer :: RealMouseInputs -> DragState -> Command
 dropPlayer i { playerColor, dragPoint } =
-  let playerPosition = screenToMap i.dims
-                (ScreenPoint $ toPoint i.mousePos - dragPoint + GFX.playerCenterT)
+  let playerPosition = screenToMap i.offscreenDims
+                (ScreenPoint $ i.realMousePos - dragPoint + GFX.playerCenterT)
    in PlayerMove playerColor playerPosition
 
 data DragCommand =
@@ -118,11 +115,13 @@ data DragCommand =
 -- only one should occur on one mousepress
 gameLogicState :: MouseInputs -> State GameState (Maybe Command)
 gameLogicState mouseInputs = do
-  explore <- handleExplore mouseInputs
-  drag <- handleDrag mouseInputs
+  renderOffset <- _.renderOffset <$> get
+  let realMouseI = { offscreenDims: mouseInputs.offscreenDims, ws: mouseInputs.ws, mousePressed: mouseInputs.mousePressed, realMousePos: toPoint mouseInputs.mousePos + renderOffset }
+  explore <- handleExplore realMouseI
+  drag <- handleDrag realMouseI
   pure $ unwrap $ First drag <> First explore
 
-handleExplore :: MouseInputs -> State GameState (Maybe Command)
+handleExplore :: RealMouseInputs -> State GameState (Maybe Command)
 handleExplore mouseInputs =
   if mouseInputs.mousePressed then do
     gameState <- get 
@@ -133,7 +132,8 @@ handleExplore mouseInputs =
                           -- FIXME only expore if neighboring cell is empty
                           if Map.lookup color gameState.players == Just (MapPoint { x, y }) then
                             let mp = MapPoint { x, y }
-                                m = First $ evalExploreBBox mouseInputs.dims dir mp (toScreenPoint mouseInputs.mousePos)
+                                m = First $ evalExploreBBox mouseInputs.offscreenDims dir mp
+                                      (ScreenPoint mouseInputs.realMousePos)
                             in const (Explore mp dir) <$> m
                           else
                             mempty
@@ -141,7 +141,7 @@ handleExplore mouseInputs =
   else
     pure Nothing
 
-handleDrag :: MouseInputs -> State GameState (Maybe Command)
+handleDrag :: RealMouseInputs -> State GameState (Maybe Command)
 handleDrag mouseInputs = do
   gameState <- get
   let dragCommand = unwrap $ (do
@@ -172,6 +172,15 @@ gameLogic inputs gameState =
             m <- note Nothing msgToSend
             pure { ws: ws, m: genericEncodeJSON defaultOptions m })
       pure nextGameState
+    Keyboard arrowKeys -> do
+      let mul = 5.0
+          xLeft = if arrowKeys.left then (-1.0) else 0.0
+          xRight = if arrowKeys.right then 1.0 else 0.0
+          yUp = if arrowKeys.up then (-1.0) else 0.0
+          yDown = if arrowKeys.down then 1.0 else 0.0
+          cx = gameState.renderOffset.x
+          cy = gameState.renderOffset.y
+      pure $ gameState { renderOffset = { x: cx + mul * (xLeft + xRight), y: cy + mul * (yUp + yDown) } }
     ServerMsg mMsg -> do
       -- TODO error logging
       let (decodedMsg :: Maybe Command) =

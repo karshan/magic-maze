@@ -24,13 +24,18 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Console (log)
 import GFX as GFX
-import Graphics.Canvas (CanvasElement, CanvasImageSource, Context2D, drawImage, getCanvasElementById, getContext2D, setCanvasHeight, setCanvasWidth, tryLoadImage, getImageData, ImageData, putImageData)
-import Graphics.Drawing (translate, rectangle, filled, fillColor, Drawing, image, Point)
+import Graphics.Canvas (CanvasElement, CanvasImageSource, Context2D, drawImage, getCanvasElementById, getContext2D, setCanvasHeight, setCanvasWidth, tryLoadImage, getImageData, ImageData, putImageDataFull, clearRect, canvasElementToImageSource)
+import Graphics.Drawing
 import Graphics.Drawing as D
 import Graphics.Drawing.Font as D
 import Signal (Signal, foldp, sampleOn, runSignal, constant, map2, merge)
 import Signal.Channel (channel, send, subscribe)
 import Signal.WebSocket (create) as WS
+import Web.DOM.Document
+import Web.HTML
+import Web.HTML.Window
+import Web.HTML.HTMLDocument
+import Unsafe.Coerce -- TODO move to purescript-canvas
 
 import GameLogic
 import GFX.Cell (drawCell, drawCellWall, drawCellExplore)
@@ -46,39 +51,36 @@ keycodes = {
         down: 40
     }
 
-drawPlayer :: DimensionPair -> MapPoint -> Maybe Point -> CoordinatePair -> CanvasImageSource -> Drawing
-drawPlayer dims playerPosition mDragPoint mouse canvasImage =
+drawPlayer :: DimensionPair -> MapPoint -> Maybe Point -> Point -> CanvasImageSource -> Drawing
+drawPlayer dims playerPosition mDragPoint realMouse canvasImage =
     (maybe
         (GFX.playerCell <<< mapToScreenD dims playerPosition)
-        (\dragPoint -> translate' (toPoint mouse - dragPoint))
+        (\dragPoint -> translate' (realMouse - dragPoint))
         mDragPoint)
     (image canvasImage)
 
 -- TODO Render in large offscreen canvas then never re-render until maze changes.
 --      Then we don't need to clear the background, it will be transparent by default.
-renderMaze :: Context2D -> { maze :: Maze, dims :: DimensionPair, assets :: Assets } -> Effect ImageData
-renderMaze ctx { maze, dims, assets } = do
-  D.render ctx (filled (fillColor (rgba 0 0 0 0.0)) (rectangle 0.0 0.0 (toNumber dims.w) (toNumber dims.h)))
-  let cells = forAllCells maze (drawCell dims maze.cells)
+renderMaze :: Context2D -> { maze :: Maze, offscreenDims :: DimensionPair, assets :: Assets } -> Effect Unit
+renderMaze ctx { maze, offscreenDims, assets } = do
+  D.render ctx (filled (fillColor (rgba 0 0 0 0.0)) (rectangle 0.0 0.0 (toNumber offscreenDims.w) (toNumber offscreenDims.h)))
+  let cells = forAllCells maze (drawCell offscreenDims maze.cells)
   let exploreCells =
         forAllCells maze
           (\x y cell ->
             case cell.special of
                  Just (STExplore col dir) ->
-                   drawCellExplore dir dims x y (maybe mempty image (lookup (AExplore col) assets))
+                   drawCellExplore dir offscreenDims x y (maybe mempty image (lookup (AExplore col) assets))
                  _ -> mempty)
-  let walls = forAllCells maze (drawCellWall dims maze.cells)
-  let bg = maybe mempty image (lookup ABackground assets)
-  D.render ctx (GFX.background dims bg <> cells <> exploreCells <> walls)
-  getImageData ctx 0.0 0.0 (toNumber dims.w) (toNumber dims.h)
+  let walls = forAllCells maze (drawCellWall offscreenDims maze.cells)
+  D.render ctx (cells <> exploreCells <> walls)
 
 renderText :: Number -> Number -> Color -> String -> Drawing
 renderText x y c s = D.text (D.font D.monospace 12 mempty) x y (D.fillColor c) s
 
-render :: Context2D -> DimensionPair -> Assets -> CoordinatePair -> ImageData -> GameState -> Effect Unit
-render ctx dims assets mouse renderedMaze gameState = do
-  let highlight = screenToMap dims (toScreenPoint mouse)
-  let debugText = renderText 100.0 100.0 white (show $ gameState.maze.borders)
+render :: Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Assets -> Point -> GameState -> Effect Unit
+render ctx offscreenCanvas offscreenDims screenDims assets realMouse gameState = do
+  let debugText = renderText 100.0 100.0 white (show $ gameState.renderOffset)
   -- TODO draw dragging player first, then in descending order by y coordinate
   let players =
         (foldMapWithIndex
@@ -88,11 +90,12 @@ render ctx dims assets mouse renderedMaze gameState = do
                     let mDragPoint = unwrap do
                           ds <- First gameState.dragging
                           guard (ds.playerColor == p) (pure ds.dragPoint)
-                    in maybe mempty (\pos -> drawPlayer dims pos mDragPoint mouse img) (lookup p gameState.players)
+                    in maybe mempty (\pos -> drawPlayer offscreenDims pos mDragPoint realMouse img) (lookup p gameState.players)
                 _ -> mempty)
         assets)
-  putImageData ctx renderedMaze 0.0 0.0
-  D.render ctx (players <> debugText)
+  let r = gameState.renderOffset
+  let bg = maybe mempty image (Map.lookup ABackground assets)
+  D.render ctx (GFX.background screenDims bg <> (translate (-r.x) (-r.y) $ (image $ canvasElementToImageSource offscreenCanvas) <> players) <> debugText)
 
 resize :: CanvasElement -> DimensionPair -> Effect Unit
 resize canvas dims = do
@@ -117,12 +120,15 @@ loadAssets toLoad =
 main :: Effect Unit
 main = onDOMContentLoaded do
     frames <- animationFrame
-    leftInputs <- keyPressed keycodes.left
-    rightInputs <- keyPressed keycodes.right
-    upInputs <- keyPressed keycodes.up
-    downInputs <- keyPressed keycodes.down
+    upKey <- keyPressed keycodes.up
+    rightKey <- keyPressed keycodes.right
+    downKey <- keyPressed keycodes.down
+    leftKey <- keyPressed keycodes.left
     mcanvas <- getCanvasElementById "canvas"
-    dims <- windowDimensions
+    doc <- toDocument <$> (document =<< window)
+    offscreenCanvas <- unsafeCoerce <$> createElement "canvas" doc
+    screenDims <- windowDimensions
+    let offscreenDims = constant $ { w: floor tileHalfWidth * 2 * 4 * 9, h: floor tileHalfHeight * 2 * 4 * 9 }
     mPos <- mousePos
     mPressed <- mouseButtonPressed MouseLeftButton
     log "creating websocket"
@@ -130,13 +136,17 @@ main = onDOMContentLoaded do
     maybe
         (log "error no canvas")
         (\canvas -> do
-            let mouseMove = { dims: _, mousePos: _, mousePressed: _, ws: _ } <$>
-                           dims <*> mPos <*> mPressed <*> ws
-            let inputs = merge (Mouse <$> sampleOn mPressed mouseMove) (ServerMsg <$> serverMsg)
+            let mouseMove = { offscreenDims: _, mousePos: _, mousePressed: _, ws: _ } <$>
+                           offscreenDims <*> mPos <*> mPressed <*> ws
+            let arrowKeys = { up: _, right: _, down: _, left: _ } <$> upKey <*> rightKey <*> downKey <*> leftKey
+            let inputs = merge (Keyboard <$> arrowKeys) $ merge (Mouse <$> sampleOn mPressed mouseMove) (ServerMsg <$> serverMsg)
             game <- foldEffect gameLogic initialState inputs
+            let realMousePos = map2 (\g m -> g.renderOffset + toPoint m) game mPos
             ctx <- getContext2D canvas
-            runSignal (resize canvas <$> dims)
-            renderedMaze <- mapEffect (renderMaze ctx)
+            offscreenCtx <- getContext2D offscreenCanvas
+            runSignal (resize canvas <$> screenDims)
+            runSignal (resize offscreenCanvas <$> offscreenDims)
+            renderedMaze <- mapEffect (renderMaze offscreenCtx)
             -- TODO show loading screen, wait for all assets to load then render
             assets <- loadAssets $ Map.fromFoldable [
                         Tuple (APlayer Red) "svg/player-red.svg",
@@ -150,7 +160,7 @@ main = onDOMContentLoaded do
                         Tuple ABackground "svg/background.svg"
                       ]
             -- FIXME game sampleOn ExploreCommand
-            let renderedMazeSignal = renderedMaze $ { maze: _, dims: _, assets: _ } <$> (_.maze <$> game) <*> dims <*> assets
+            let renderedMazeSignal = renderedMaze $ { maze: _, offscreenDims: _, assets: _ } <$> (_.maze <$> game) <*> offscreenDims <*> assets
             -- TODO sampleOn animationFrame ?
-            runSignal (render ctx <$> dims <*> assets <*> mPos <*> renderedMazeSignal <*> game))
+            runSignal (render ctx offscreenCanvas <$> offscreenDims <*> screenDims <*> assets <*> realMousePos <*> game))
         mcanvas

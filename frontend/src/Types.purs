@@ -70,14 +70,17 @@ forAllCells maze f =
         (maze.borders.up .. maze.borders.down))
     (maze.borders.left .. maze.borders.right)
 
-type MouseInputs = { dims :: DimensionPair, mousePos :: CoordinatePair, mousePressed :: Boolean, ws :: Maybe (WebSocket) }
+type RealMouseInputs = { offscreenDims :: DimensionPair, realMousePos :: Point, mousePressed :: Boolean, ws :: Maybe (WebSocket) }
+type MouseInputs = { offscreenDims :: DimensionPair, mousePos :: CoordinatePair, mousePressed :: Boolean, ws :: Maybe (WebSocket) }
+type KeyboardInputs = DirMap Boolean
 data Inputs =
     Mouse MouseInputs
+  | Keyboard KeyboardInputs
   | ServerMsg (Maybe String)
 
 -- TODO nonempty map like dirmap
 type PlayerPositions = Map PlayerColor MapPoint
-type GameState = { maze :: Maze, players :: PlayerPositions, dragging :: Maybe DragState }
+type GameState = { maze :: Maze, players :: PlayerPositions, dragging :: Maybe DragState, renderOffset :: Point }
 type DragState = { playerColor :: PlayerColor, dragPoint :: Point }
 
 data Command =

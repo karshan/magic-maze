@@ -14,6 +14,7 @@ import Prelude
 import Signal.DOM
 import Types
 
+-- TODO cellHalfWidth, tiles are 4x4 cells
 tileHalfWidth :: Number
 tileHalfWidth = 64.0
 
