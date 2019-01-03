@@ -3,8 +3,10 @@ module Tiles where
 import Types
 
 import Prelude
+import Control.Monad.State
 import Data.Array
 import Data.Foldable
+import Data.FoldableWithIndex
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe.First (First(..))
@@ -28,9 +30,32 @@ mapKeys f m =
 translateTile :: MapPoint -> Tile -> Tile
 translateTile mp t = t { cells = mapKeys (_ + mp) t.cells }
 
--- FIXME rotate walls and rotate cell.explore dir's
+rotateWalls :: Int -> Cells -> Cells
+rotateWalls 0 cells = cells
+rotateWalls n cells =
+  rotateWalls (n - 1) $ flip execState cells $ foldlWithIndex
+    (\i acc origCell -> do
+      let west (MapPoint { x, y }) = MapPoint { x: x - 1, y }
+          rotateDir N = E
+          rotateDir E = S
+          rotateDir S = W
+          rotateDir W = N
+          rotateExplore (Just (STExplore col dir)) = Just $ STExplore col (rotateDir dir)
+          rotateExplore s = s
+          grd b a = if b then a else pure unit
+      acc
+      modify_ (Map.update (\a -> Just $ a { walls = { right: false, down: origCell.walls.right } }) i)
+      grd origCell.walls.down
+        (modify_ (Map.update (\a -> Just $ a { walls = { right: true, down: a.walls.down } }) (west i)))
+      modify_ (Map.update (\a -> Just $ a { special = rotateExplore a.special }) i))
+    (pure unit)
+    cells
+
+-- We can't do rotateWalls n ... rotatePoint n. because the points and walls need to be rotated
+-- 90 degrees at a time together.
 rotateTile :: Int -> Tile -> Tile
-rotateTile n t = t { cells = mapKeys (rotatePoint n) t.cells }
+rotateTile 0 t = t
+rotateTile n t = rotateTile (n - 1) $ t { cells = rotateWalls 1 $ mapKeys (rotatePoint 1) t.cells }
 
 dirToInt :: Dir -> Int
 dirToInt N = 0
@@ -41,7 +66,6 @@ dirToInt W = 3
 getRotation :: Dir -> Dir -> Int
 getRotation explore entrance = (dirToInt explore - dirToInt entrance + 2) `mod` 4
 
--- TODO switch out large case statement for some simple math
 rotateAndTranslate :: MapPoint -> Dir -> Tile -> Tile
 rotateAndTranslate mp dir tile  = 
   let mkMp x y = MapPoint {x,y}
@@ -123,21 +147,21 @@ tiles =
       entrance: { side: E, offset: 2 }, -- TODO calculate from .cells
       cells: Map.fromFoldable [
         mk 0 0 rightWall Nothing,
-        mk 1 0 noWalls unwalk,
+        mk 1 0 rdWall unwalk,
         mk 2 0 rightWall (exp Green N),
-        mk 3 0 noWalls unwalk,
+        mk 3 0 rightWall unwalk,
         mk 0 1 downWall (exp Purple W),
         mk 1 1 downWall Nothing,
         mk 2 1 rightWall Nothing,
-        mk 3 1 noWalls unwalk,
-        mk 0 2 noWalls unwalk,
+        mk 3 1 rdWall unwalk,
+        mk 0 2 rightWall unwalk,
         mk 1 2 downWall Nothing,
         mk 2 2 noWalls Nothing,
         mk 3 2 downWall (Just STEntrance),
-        mk 0 3 noWalls unwalk,
-        mk 1 3 noWalls unwalk,
+        mk 0 3 downWall unwalk,
+        mk 1 3 rdWall unwalk,
         mk 2 3 rdWall Nothing,
-        mk 3 3 noWalls unwalk
+        mk 3 3 rdWall unwalk
       ]
     }
   ]

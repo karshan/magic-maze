@@ -59,8 +59,6 @@ drawPlayer dims playerPosition mDragPoint realMouse canvasImage =
         mDragPoint)
     (image canvasImage)
 
--- TODO Render in large offscreen canvas then never re-render until maze changes.
---      Then we don't need to clear the background, it will be transparent by default.
 renderMaze :: Context2D -> { maze :: Maze, offscreenDims :: DimensionPair, assets :: Assets } -> Effect Unit
 renderMaze ctx { maze, offscreenDims, assets } = do
   D.render ctx (filled (fillColor (rgba 0 0 0 0.0)) (rectangle 0.0 0.0 (toNumber offscreenDims.w) (toNumber offscreenDims.h)))
