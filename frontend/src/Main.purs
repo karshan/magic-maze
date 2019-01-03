@@ -78,7 +78,7 @@ renderText x y c s = D.text (D.font D.monospace 12 mempty) x y (D.fillColor c) s
 
 render :: Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Assets -> Point -> GameState -> Effect Unit
 render ctx offscreenCanvas offscreenDims screenDims assets realMouse gameState = do
-  let debugText = renderText 100.0 100.0 white (show $ gameState.renderOffset)
+  let debugText = renderText 100.0 100.0 white (show gameState.renderOffset)
   -- TODO draw dragging player first, then in descending order by y coordinate
   let players =
         (foldMapWithIndex
@@ -130,7 +130,7 @@ main = onDOMContentLoaded do
     mPos <- mousePos
     mPressed <- mouseButtonPressed MouseLeftButton
     log "creating websocket"
-    { ws, serverMsg } <- WS.create "ws://localhost:3030"
+    { ws, serverMsg } <- WS.create "wss://tmp.karshan.me/ws/"
     maybe
         (log "error no canvas")
         (\canvas -> do
@@ -138,7 +138,8 @@ main = onDOMContentLoaded do
                            offscreenDims <*> mPos <*> mPressed <*> ws
             let arrowKeys = { up: _, right: _, down: _, left: _ } <$> upKey <*> rightKey <*> downKey <*> leftKey
             let inputs = merge (Keyboard <$> arrowKeys) $ merge (Mouse <$> sampleOn mPressed mouseMove) (ServerMsg <$> serverMsg)
-            game <- foldEffect gameLogic initialState inputs
+            rerenderChan <- channel initialState.maze
+            game <- foldEffect (gameLogic rerenderChan) initialState inputs
             let realMousePos = map2 (\g m -> g.renderOffset + toPoint m) game mPos
             ctx <- getContext2D canvas
             offscreenCtx <- getContext2D offscreenCanvas
@@ -157,8 +158,8 @@ main = onDOMContentLoaded do
                         Tuple (AExplore Purple) "svg/explore-purple.svg",
                         Tuple ABackground "svg/background.svg"
                       ]
-            -- FIXME game sampleOn ExploreCommand
-            let renderedMazeSignal = renderedMaze $ { maze: _, offscreenDims: _, assets: _ } <$> (_.maze <$> game) <*> offscreenDims <*> assets
+            -- TODO rerenderChan should only change when the maze changes, right now it changes on every server command received
+            let renderedMazeSignal = renderedMaze $ { maze: _, offscreenDims: _, assets: _ } <$> subscribe rerenderChan <*> offscreenDims <*> assets
             -- TODO sampleOn animationFrame ?
             runSignal (render ctx offscreenCanvas <$> offscreenDims <*> screenDims <*> assets <*> realMousePos <*> game))
         mcanvas

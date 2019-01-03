@@ -160,8 +160,8 @@ handleDrag mouseInputs = do
               }) 
           pure (Just command)
 
-gameLogic :: Inputs -> GameState -> Effect GameState
-gameLogic inputs gameState =
+gameLogic :: Channel Maze -> Inputs -> GameState -> Effect GameState
+gameLogic rerenderChan inputs gameState =
   case inputs of
     Mouse mouseInputs -> do
       let (Tuple msgToSend nextGameState) = runState (gameLogicState mouseInputs) gameState
@@ -187,5 +187,7 @@ gameLogic inputs gameState =
             hush <<< runExcept <<< genericDecodeJSON defaultOptions =<< mMsg
       log (show decodedMsg)
       maybe (pure gameState)
-        (pure <<< flip evalCommand gameState)
+        (\cmd ->
+            let newState = evalCommand cmd gameState
+            in Chan.send rerenderChan newState.maze *> pure newState)
         decodedMsg
