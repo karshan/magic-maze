@@ -12,6 +12,7 @@ import Data.Map as Map
 import Data.Maybe.First (First(..))
 import Data.Maybe
 import Data.Newtype
+import Data.Set as Set
 import Data.Tuple (Tuple(..))
 
 -- rotate (n * 90) deg clockwise
@@ -28,7 +29,7 @@ mapKeys f m =
   in Map.fromFoldable $ theArray $ map (\(Tuple k v) -> Tuple (f k) v) $ Map.toUnfoldableUnordered m
 
 translateTile :: MapPoint -> Tile -> Tile
-translateTile mp t = t { cells = mapKeys (_ + mp) t.cells }
+translateTile mp t = t { cells = mapKeys (_ + mp) t.cells, escalators = Set.map (\(Tuple mp1 mp2) -> Tuple (mp1 + mp) (mp2 + mp)) t.escalators }
 
 -- FIXME rewrite fold to ensure it runs in increasing order of x coordinate
 rotateWalls :: Int -> Cells -> Cells
@@ -56,7 +57,7 @@ rotateWalls n cells =
 -- 90 degrees at a time together.
 rotateTile :: Int -> Tile -> Tile
 rotateTile 0 t = t
-rotateTile n t = rotateTile (n - 1) $ t { cells = rotateWalls 1 $ mapKeys (rotatePoint 1) t.cells }
+rotateTile n t = rotateTile (n - 1) $ t { cells = rotateWalls 1 $ mapKeys (rotatePoint 1) t.cells, escalators = Set.map (\(Tuple mp1 mp2) -> Tuple (rotatePoint 1 mp1) (rotatePoint 1 mp2)) t.escalators }
 
 dirToInt :: Dir -> Int
 dirToInt N = 0
@@ -93,12 +94,14 @@ mergeTiles cur newIndex mp dir = do
       theArray = identity
   newTile <- tiles !! newIndex
   let mkMp x y = MapPoint { x, y }
-  let newCells = Map.union cur.cells (rotateAndTranslate mp dir newTile).cells
+  let rntTile = rotateAndTranslate mp dir newTile
+  let newCells = Map.union cur.cells rntTile.cells
+  let newEscalators = Set.union cur.escalators rntTile.escalators
   let arrayCells = theArray $ Map.toUnfoldable newCells
   let xs = map (\(Tuple (MapPoint { x, y }) v) -> x) arrayCells
   let ys = map (\(Tuple (MapPoint { x, y }) v) -> y) arrayCells
   newBorders <- { up: _, down: _, left: _, right: _ } <$> minimum ys <*> maximum ys <*> minimum xs <*> maximum xs
-  pure $ cur { cells = Map.union cur.cells (rotateAndTranslate mp dir newTile).cells, borders = newBorders }
+  pure $ cur { cells = newCells, borders = newBorders, escalators = newEscalators }
 
 -- TODO calculate STExplore dir from map tile cell's coordinate
 initialTile :: Maze
@@ -107,13 +110,14 @@ initialTile =
         downWall = { right: false, down: true }
         rightWall = { right: true, down: false }
         rdWall = { right: true, down: true }
+        mp x y = MapPoint { x, y }
     in {
       cells: Map.fromFoldable [
-        Tuple (MapPoint { x: 0, y: 0 }) { walls: noWalls, special: Just STUnwalkable },
+        Tuple (MapPoint { x: 0, y: 0 }) { walls: rdWall, special: Just STUnwalkable },
         Tuple (MapPoint { x: 1, y: 0 }) { walls: noWalls, special: Nothing },
         Tuple (MapPoint { x: 2, y: 0 }) { walls: noWalls, special: Just (STExplore Yellow N) },
         Tuple (MapPoint { x: 3, y: 0 }) { walls: rdWall, special: Nothing },
-        Tuple (MapPoint { x: 0, y: 1 }) { walls: rightWall, special: Just (STExplore Green W) },
+        Tuple (MapPoint { x: 0, y: 1 }) { walls: rdWall, special: Just (STExplore Green W) },
         Tuple (MapPoint { x: 1, y: 1 }) { walls: noWalls, special: Nothing },
         Tuple (MapPoint { x: 2, y: 1 }) { walls: noWalls, special: Nothing },
         Tuple (MapPoint { x: 3, y: 1 }) { walls: rdWall, special: Nothing },
@@ -126,6 +130,7 @@ initialTile =
         Tuple (MapPoint { x: 2, y: 3 }) { walls: downWall, special: Nothing },
         Tuple (MapPoint { x: 3, y: 3 }) { walls: rdWall, special: Just STUnwalkable }
       ],
+      escalators: Set.fromFoldable [ Tuple (mp 0 1) (mp 1 0)],
       borders: {
         left: 0,
         up: 0,
@@ -142,10 +147,12 @@ tiles =
       rdWall = { right: true, down: true }
       unwalk = Just STUnwalkable
       exp c d = Just (STExplore c d)
+      mp x y = MapPoint { x, y }
       mk x y walls special = 
-        Tuple (MapPoint { x, y }) { walls, special }
+        Tuple (mp x y) { walls, special }
   in [{
       entrance: { side: E, offset: 2 }, -- TODO calculate from .cells
+      escalators: Set.empty,
       cells: Map.fromFoldable [
         mk 0 0 rightWall Nothing,
         mk 1 0 rdWall unwalk,

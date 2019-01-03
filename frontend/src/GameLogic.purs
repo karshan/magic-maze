@@ -10,6 +10,8 @@ import Data.Maybe
 import Data.Maybe.First
 import Data.Monoid
 import Data.Newtype
+import Data.Set (Set)
+import Data.Set as Set
 import Data.Tuple
 import Effect
 import Foreign.Generic
@@ -76,16 +78,22 @@ getDirection (MapPoint { x: cx, y: cy }) (MapPoint { x: tx, y: ty }) =
   else
     Nothing
 
+isEscalator :: Set Escalator -> MapPoint -> MapPoint -> Boolean
+isEscalator escalators mp1 mp2 = Set.member (Set.fromFoldable [ mp1, mp2 ]) $ Set.map (\(Tuple a b) -> Set.fromFoldable [ a, b ]) escalators
+
 evalCommand :: Command -> GameState -> GameState
-evalCommand (PlayerMove pCol targetPos) gs = maybe gs identity (do
+evalCommand (PlayerMove pCol targetPos) gs = maybe gs identity $ do
   currentPos <- Map.lookup pCol gs.players
   targetCell <- Map.lookup targetPos gs.maze.cells
   guard (targetCell.special /= (Just STUnwalkable)) (pure unit)
   guard (not $ any (_ == targetPos) gs.players) (pure unit)
-  dir <- getDirection currentPos targetPos
-  guard (not $ blockedByWall gs.maze currentPos targetPos dir) (pure unit)
-  -- FIXME guard (not $ blockedByPlayer gs.maze gs.players currentPos targetPos dir)
-  pure $ gs { players = Map.update (const $ Just targetPos) pCol gs.players })
+  if isEscalator gs.maze.escalators currentPos targetPos then
+    pure $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
+    else do
+      dir <- getDirection currentPos targetPos
+      guard (not $ blockedByWall gs.maze currentPos targetPos dir) (pure unit)
+      -- FIXME guard (not $ blockedByPlayer gs.maze gs.players currentPos targetPos dir)
+      pure $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
 evalCommand (Explore mp dir) gs =
   maybe gs (gs { maze = _ }) $ mergeTiles gs.maze 0 mp dir
 

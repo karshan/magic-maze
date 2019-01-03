@@ -7,6 +7,8 @@ import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Show (genericShow)
 import Data.Map (lookup)
 import Data.Maybe (Maybe (..), maybe)
+import Data.Newtype (class Newtype)
+import Data.Set (Set)
 import Foreign
 import Foreign.Class
 import Foreign.Generic
@@ -52,9 +54,10 @@ instance decodeSpecialTile :: Decode SpecialTile where
   decode = genericDecode defaultOptions
 
 type Cells = Map MapPoint Cell
-type Maze = { cells :: Cells, borders :: DirMap Int }
+type Escalator = Tuple MapPoint MapPoint
+type Maze = { cells :: Cells, borders :: DirMap Int, escalators :: Set Escalator }
 type Entrance = { side :: Dir, offset :: Int }
-type Tile = { cells :: Cells, entrance :: Entrance }
+type Tile = { cells :: Cells, entrance :: Entrance, escalators :: Set Escalator }
 type Cell = { walls :: { right :: Boolean, down :: Boolean }, special :: Maybe SpecialTile }
 
 forAllCells :: forall m. Monoid m => Maze -> (Int -> Int -> Cell -> m) -> m
@@ -109,6 +112,7 @@ toPoint :: { x :: Int, y :: Int } -> Point
 toPoint { x, y } = { x: toNumber x, y: toNumber y }
 
 newtype ScreenPoint = ScreenPoint Point
+derive instance newtypeScreenPoint :: Newtype ScreenPoint _
 instance semiringScreenPoint :: Semiring ScreenPoint where
   add (ScreenPoint a) (ScreenPoint b) = ScreenPoint (a + b)
   mul (ScreenPoint a) (ScreenPoint b) = ScreenPoint (a * b)

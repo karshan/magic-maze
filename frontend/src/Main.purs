@@ -52,12 +52,19 @@ keycodes = {
     }
 
 drawPlayer :: DimensionPair -> MapPoint -> Maybe Point -> Point -> CanvasImageSource -> Drawing
-drawPlayer dims playerPosition mDragPoint realMouse canvasImage =
+drawPlayer offscreenDims playerPosition mDragPoint realMouse canvasImage =
     (maybe
-        (GFX.playerCell <<< mapToScreenD dims playerPosition)
+        (GFX.playerCell <<< mapToScreenD offscreenDims playerPosition)
         (\dragPoint -> translate' (realMouse - dragPoint))
         mDragPoint)
     (image canvasImage)
+
+drawEscalator :: DimensionPair -> MapPoint -> MapPoint -> Drawing
+drawEscalator offscreenDims mp1 mp2 = 
+  let mp2p = unwrap <<< mapToScreen offscreenDims
+  in translate 0.0 (tileHalfHeight - 2.0) $ 
+       outlined (lineWidth 4.0 <> outlineColor (rgba 120 120 120 1.0)) $
+         path $ map mp2p [ mp1, mp2 ]
 
 renderMaze :: Context2D -> { maze :: Maze, offscreenDims :: DimensionPair, assets :: Assets } -> Effect Unit
 renderMaze ctx { maze, offscreenDims, assets } = do
@@ -71,7 +78,8 @@ renderMaze ctx { maze, offscreenDims, assets } = do
                    drawCellExplore dir offscreenDims x y (maybe mempty image (lookup (AExplore col) assets))
                  _ -> mempty)
   let walls = forAllCells maze (drawCellWall offscreenDims maze.cells)
-  D.render ctx (cells <> exploreCells <> walls)
+  let escalators = foldMap (\(Tuple mp1 mp2) -> drawEscalator offscreenDims mp1 mp2) maze.escalators
+  D.render ctx (cells <> exploreCells <> walls <> escalators)
 
 renderText :: Number -> Number -> Color -> String -> Drawing
 renderText x y c s = D.text (D.font D.monospace 12 mempty) x y (D.fillColor c) s
