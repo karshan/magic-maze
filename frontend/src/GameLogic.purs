@@ -87,7 +87,7 @@ evalCommand (PlayerMove pCol targetPos) gs = maybe gs identity $ do
   targetCell <- Map.lookup targetPos gs.maze.cells
   guard (targetCell.special /= (Just STUnwalkable)) (pure unit)
   guard (not $ any (_ == targetPos) gs.players) (pure unit)
-  if isEscalator gs.maze.escalators currentPos targetPos then
+  if isEscalator gs.maze.escalators currentPos targetPos || targetCell.special == Just (STWarp pCol) then
     pure $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
     else do
       dir <- getDirection currentPos targetPos

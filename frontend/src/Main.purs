@@ -38,7 +38,7 @@ import Web.HTML.HTMLDocument
 import Unsafe.Coerce -- TODO move to purescript-canvas
 
 import GameLogic
-import GFX.Cell (drawCell, drawCellWall, drawCellExplore)
+import GFX.Cell (drawCell, drawCellWall)
 
 translate' :: Point -> Drawing -> Drawing
 translate' { x, y } = translate x y
@@ -69,17 +69,10 @@ drawEscalator offscreenDims mp1 mp2 =
 renderMaze :: Context2D -> { maze :: Maze, offscreenDims :: DimensionPair, assets :: Assets } -> Effect Unit
 renderMaze ctx { maze, offscreenDims, assets } = do
   D.render ctx (filled (fillColor (rgba 0 0 0 0.0)) (rectangle 0.0 0.0 (toNumber offscreenDims.w) (toNumber offscreenDims.h)))
-  let cells = forAllCells maze (drawCell offscreenDims maze.cells)
-  let exploreCells =
-        forAllCells maze
-          (\x y cell ->
-            case cell.special of
-                 Just (STExplore col dir) ->
-                   drawCellExplore dir offscreenDims x y (maybe mempty image (lookup (AExplore col) assets))
-                 _ -> mempty)
+  let cells = forAllCells maze (drawCell assets offscreenDims maze.cells)
   let walls = forAllCells maze (drawCellWall offscreenDims maze.cells)
   let escalators = foldMap (\(Tuple mp1 mp2) -> drawEscalator offscreenDims mp1 mp2) maze.escalators
-  D.render ctx (cells <> exploreCells <> walls <> escalators)
+  D.render ctx (cells <> walls <> escalators)
 
 renderText :: Number -> Number -> Color -> String -> Drawing
 renderText x y c s = D.text (D.font D.monospace 12 mempty) x y (D.fillColor c) s
@@ -164,6 +157,10 @@ main = onDOMContentLoaded do
                         Tuple (AExplore Yellow) "svg/explore-yellow.svg",
                         Tuple (AExplore Green) "svg/explore-green.svg",
                         Tuple (AExplore Purple) "svg/explore-purple.svg",
+                        Tuple (AWarp Red) "svg/warp-red.svg",
+                        Tuple (AWarp Yellow) "svg/warp-yellow.svg",
+                        Tuple (AWarp Green) "svg/warp-green.svg",
+                        Tuple (AWarp Purple) "svg/warp-purple.svg",
                         Tuple ABackground "svg/background.svg"
                       ]
             -- TODO rerenderChan should only change when the maze changes, right now it changes on every server command received

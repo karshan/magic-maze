@@ -44,6 +44,8 @@ data SpecialTile =
     STUnwalkable
   | STEntrance
   | STExplore PlayerColor Dir
+  | STWarp PlayerColor
+  | STTimer
 derive instance eqSpecialTile :: Eq SpecialTile
 derive instance ordSpecialTile :: Ord SpecialTile
 derive instance genericSpecialTile :: Generic SpecialTile _
@@ -144,6 +146,7 @@ instance decodeMapPoint :: Decode MapPoint where
 data AssetName =
     APlayer PlayerColor
   | AExplore PlayerColor
+  | AWarp PlayerColor
   | ABackground
 derive instance eqAssetName :: Eq AssetName
 derive instance ordAssetName :: Ord AssetName
