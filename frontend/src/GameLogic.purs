@@ -132,8 +132,8 @@ gameLogicState mouseInputs = do
 handleExplore :: RealMouseInputs -> State GameState (Maybe Command)
 handleExplore mouseInputs =
   if mouseInputs.mousePressed then do
-    gameState <- get 
-    pure $ unwrap $ forAllCells gameState.maze 
+    gameState <- get
+    pure $ unwrap $ forAllCells gameState.maze
               (\x y cell ->
                   case cell.special of
                        (Just (STExplore color dir)) ->
@@ -164,8 +164,8 @@ handleDrag mouseInputs = do
         Just (EndDrag dragState) -> do
           let command = dropPlayer mouseInputs dragState
           put (evalCommand command gameState {
-                dragging = Nothing 
-              }) 
+                dragging = Nothing
+              })
           pure (Just command)
 
 gameLogic :: Channel Maze -> Inputs -> GameState -> Effect GameState

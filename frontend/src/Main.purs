@@ -60,9 +60,9 @@ drawPlayer offscreenDims playerPosition mDragPoint realMouse canvasImage =
     (image canvasImage)
 
 drawEscalator :: DimensionPair -> MapPoint -> MapPoint -> Drawing
-drawEscalator offscreenDims mp1 mp2 = 
+drawEscalator offscreenDims mp1 mp2 =
   let mp2p = unwrap <<< mapToScreen offscreenDims
-  in translate 0.0 (tileHalfHeight - 2.0) $ 
+  in translate 0.0 (tileHalfHeight - 2.0) $
        outlined (lineWidth 4.0 <> outlineColor (rgba 120 120 120 1.0)) $
          path $ map mp2p [ mp1, mp2 ]
 

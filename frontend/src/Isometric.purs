@@ -63,7 +63,7 @@ evalBBox { x, y, w, h } (ScreenPoint p) =
   else
     Nothing
 
--- If the given ScreenPoint is within the Cell at the given MapPoint 
+-- If the given ScreenPoint is within the Cell at the given MapPoint
 -- then Just (dx, dy) where dx, dy is the position of the ScreenPoint
 -- relative to the cell's NW corner
 -- else Nothing

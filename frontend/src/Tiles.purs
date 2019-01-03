@@ -69,14 +69,14 @@ getRotation :: Dir -> Dir -> Int
 getRotation explore entrance = (dirToInt explore - dirToInt entrance + 2) `mod` 4
 
 rotateAndTranslate :: MapPoint -> Dir -> Tile -> Tile
-rotateAndTranslate mp dir tile  = 
+rotateAndTranslate mp dir tile  =
   let mkMp x y = MapPoint {x,y}
       rotated = rotateTile (getRotation dir tile.entrance.side) tile
-      findEntrance f = fromMaybe 0 $ unwrap $ 
-          foldMap 
+      findEntrance f = fromMaybe 0 $ unwrap $
+          foldMap
             (\i -> First $ do
                 c <- Map.lookup (f i) rotated.cells
-                if c.special == Just STEntrance then Just i else Nothing) 
+                if c.special == Just STEntrance then Just i else Nothing)
             (0..3)
       south x = mkMp x 3
       west y = mkMp 0 y
@@ -148,7 +148,7 @@ tiles =
       unwalk = Just STUnwalkable
       exp c d = Just (STExplore c d)
       mp x y = MapPoint { x, y }
-      mk x y walls special = 
+      mk x y walls special =
         Tuple (mp x y) { walls, special }
   in [{
       entrance: { side: E, offset: 2 }, -- TODO calculate from .cells
