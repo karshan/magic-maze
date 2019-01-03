@@ -30,6 +30,7 @@ mapKeys f m =
 translateTile :: MapPoint -> Tile -> Tile
 translateTile mp t = t { cells = mapKeys (_ + mp) t.cells }
 
+-- FIXME rewrite fold to ensure it runs in increasing order of x coordinate
 rotateWalls :: Int -> Cells -> Cells
 rotateWalls 0 cells = cells
 rotateWalls n cells =
