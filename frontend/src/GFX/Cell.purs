@@ -29,7 +29,7 @@ drawCellWall dims maze x y cell =
  in guard cell.walls.right (cellT GFX.wallRight)
  <> guard cell.walls.down (cellT GFX.wallDown)
  <> guard (cell.walls.right && cell.walls.down) (cellT GFX.wallSECorner')
- <> maybe mempty (const GFX.wallNWCorner')
+ <> maybe mempty (const (cellT GFX.wallNWCorner'))
       (do eastCell <- lookup (mp (x + 1) y) maze
           guard eastCell.walls.down (pure unit)
           southCell <- lookup (mp x (y + 1)) maze

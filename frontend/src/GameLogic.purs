@@ -33,6 +33,7 @@ import Web.Socket.WebSocket as WS
 initialState :: GameState
 initialState = {
       maze: initialTile,
+      tiles: tiles,
       players: Map.fromFoldable [
         Tuple Red (MapPoint { x: 1, y: 1 }),
         Tuple Yellow (MapPoint { x: 2, y: 1 }),
@@ -95,7 +96,8 @@ evalCommand (PlayerMove pCol targetPos) gs = maybe gs identity $ do
       -- FIXME guard (not $ blockedByPlayer gs.maze gs.players currentPos targetPos dir)
       pure $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
 evalCommand (Explore mp dir) gs =
-  maybe gs (gs { maze = _ }) $ mergeTiles gs.maze 0 mp dir
+  maybe gs (gs { maze = _, tiles = fromMaybe [] (tail gs.tiles) })
+    (head gs.tiles >>= (\newTile -> mergeTiles gs.maze newTile mp dir))
 
 -- TODO evalBBox in descending order of player y coordinate
 maybeStartDrag :: RealMouseInputs -> PlayerPositions -> Maybe DragState

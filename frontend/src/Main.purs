@@ -8,7 +8,7 @@ import Types
 
 import Color (Color, white, rgb, rgba, black)
 import DOM (onDOMContentLoaded)
-import Data.Array ((..))
+import Data.Array ((..), length)
 import Data.Either (hush)
 import Data.Foldable (class Foldable, foldMap)
 import Data.FoldableWithIndex (foldWithIndexM, foldMapWithIndex, foldlWithIndex)
@@ -79,7 +79,7 @@ renderText x y c s = D.text (D.font D.monospace 12 mempty) x y (D.fillColor c) s
 
 render :: Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Assets -> Point -> GameState -> Effect Unit
 render ctx offscreenCanvas offscreenDims screenDims assets realMouse gameState = do
-  let debugText = renderText 100.0 100.0 white (show gameState.renderOffset)
+  let debugText = renderText 100.0 100.0 white (show $ length gameState.tiles)
   -- TODO draw dragging player first, then in descending order by y coordinate
   let players =
         (foldMapWithIndex

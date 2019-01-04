@@ -4,7 +4,7 @@ import Types
 
 import Prelude
 import Control.Monad.State
-import Data.Array
+import Data.Array ((..))
 import Data.Foldable
 import Data.FoldableWithIndex
 import Data.Map (Map)
@@ -88,11 +88,10 @@ rotateAndTranslate mp dir tile  =
            S -> translateTile (mp + mkMp (negate $ findEntrance north) 1) rotated
            W -> translateTile (mp + mkMp (-4) (negate $ findEntrance east)) rotated
 
-mergeTiles :: Maze -> Int -> MapPoint -> Dir -> Maybe Maze
-mergeTiles cur newIndex mp dir = do
+mergeTiles :: Maze -> Tile -> MapPoint -> Dir -> Maybe Maze
+mergeTiles cur newTile mp dir = do
   let theArray :: forall a. Array a -> Array a
       theArray = identity
-  newTile <- tiles !! newIndex
   let mkMp x y = MapPoint { x, y }
   let rntTile = rotateAndTranslate mp dir newTile
   let newCells = Map.union cur.cells rntTile.cells
@@ -101,7 +100,8 @@ mergeTiles cur newIndex mp dir = do
   let xs = map (\(Tuple (MapPoint { x, y }) v) -> x) arrayCells
   let ys = map (\(Tuple (MapPoint { x, y }) v) -> y) arrayCells
   newBorders <- { up: _, down: _, left: _, right: _ } <$> minimum ys <*> maximum ys <*> minimum xs <*> maximum xs
-  pure $ cur { cells = newCells, borders = newBorders, escalators = newEscalators }
+  if length newCells /= length cur.cells + 16 then Nothing else
+    pure $ cur { cells = newCells, borders = newBorders, escalators = newEscalators }
 
 -- TODO calculate STExplore dir from map tile cell's coordinate
 initialTile :: Maze
@@ -147,6 +147,8 @@ tiles =
       rdWall = { right: true, down: true }
       unwalk = Just STUnwalkable
       exp c d = Just (STExplore c d)
+      warp c = Just (STWarp c)
+      weapon c = Just (STWeapon c)
       mp x y = MapPoint { x, y }
       mk x y walls special =
         Tuple (mp x y) { walls, special }
@@ -154,7 +156,7 @@ tiles =
       entrance: { side: E, offset: 2 }, -- TODO calculate from .cells
       escalators: Set.empty,
       cells: Map.fromFoldable [
-        mk 0 0 rightWall Nothing,
+        mk 0 0 rightWall (warp Yellow),
         mk 1 0 rdWall unwalk,
         mk 2 0 rightWall (exp Green N),
         mk 3 0 rightWall unwalk,
@@ -163,12 +165,159 @@ tiles =
         mk 2 1 rightWall Nothing,
         mk 3 1 rdWall unwalk,
         mk 0 2 rightWall unwalk,
-        mk 1 2 downWall Nothing,
+        mk 1 2 downWall (Just STTimer),
         mk 2 2 noWalls Nothing,
         mk 3 2 downWall (Just STEntrance),
         mk 0 3 downWall unwalk,
         mk 1 3 rdWall unwalk,
+        mk 2 3 rdWall (warp Red),
+        mk 3 3 rdWall unwalk
+      ]
+    }, {
+      entrance: { side: S, offset: 1 },
+      escalators: Set.empty,
+      cells: Map.fromFoldable [
+        mk 0 0 noWalls Nothing,
+        mk 1 0 rightWall Nothing,
+        mk 2 0 rightWall (warp Red),
+        mk 3 0 rdWall unwalk,
+        mk 0 1 rdWall (exp Purple W),
+        mk 1 1 noWalls Nothing,
+        mk 2 1 downWall Nothing,
+        mk 3 1 rdWall (warp Green),
+        mk 0 2 downWall (Just STTimer),
+        mk 1 2 downWall Nothing,
+        mk 2 2 noWalls Nothing,
+        mk 3 2 downWall (exp Yellow E),
+        mk 0 3 rdWall unwalk,
+        mk 1 3 noWalls (Just STEntrance),
         mk 2 3 rdWall Nothing,
+        mk 3 3 rdWall unwalk
+      ]
+    }, {
+      entrance: { side: W, offset: 1 },
+      escalators: Set.fromFoldable [ Tuple (mp 2 0) (mp 3 2) ],
+      cells: Map.fromFoldable [
+        mk 0 0 downWall (warp Green),
+        mk 1 0 noWalls Nothing,
+        mk 2 0 rdWall (exp Red N),
+        mk 3 0 rightWall unwalk,
+        mk 0 1 noWalls (Just STEntrance),
+        mk 1 1 rdWall Nothing,
+        mk 2 1 noWalls unwalk,
+        mk 3 1 rdWall unwalk,
+        mk 0 2 rdWall (warp Purple),
+        mk 1 2 noWalls unwalk,
+        mk 2 2 rightWall unwalk,
+        mk 3 2 rightWall Nothing,
+        mk 0 3 downWall unwalk,
+        mk 1 3 downWall unwalk,
+        mk 2 3 rdWall unwalk,
+        mk 3 3 rightWall (Just (STExit Purple S))
+      ]
+    }, {
+      entrance: { side: E, offset: 2 },
+      escalators: Set.empty,
+      cells: Map.fromFoldable [
+        mk 0 0 noWalls Nothing,
+        mk 1 0 noWalls Nothing,
+        mk 2 0 downWall (exp Yellow N),
+        mk 3 0 rdWall (weapon Purple),
+        mk 0 1 rightWall Nothing,
+        mk 1 1 rightWall (warp Red),
+        mk 2 1 downWall unwalk,
+        mk 3 1 rdWall unwalk,
+        mk 0 2 rightWall Nothing,
+        mk 1 2 rdWall unwalk,
+        mk 2 2 noWalls Nothing,
+        mk 3 2 downWall (Just STEntrance),
+        mk 0 3 downWall Nothing,
+        mk 1 3 downWall Nothing,
+        mk 2 3 rdWall Nothing,
+        mk 3 3 rdWall unwalk
+      ]
+    }, {
+      entrance: { side: N, offset: 2 },
+      escalators: Set.empty,
+      cells: Map.fromFoldable [
+        mk 0 0 noWalls Nothing,
+        mk 1 0 downWall Nothing,
+        mk 2 0 downWall (Just STEntrance),
+        mk 3 0 rdWall (weapon Green),
+        mk 0 1 rightWall (exp Purple W),
+        mk 1 1 downWall unwalk,
+        mk 2 1 noWalls unwalk,
+        mk 3 1 rdWall unwalk,
+        mk 0 2 rightWall Nothing,
+        mk 1 2 rightWall (warp Yellow),
+        mk 2 2 rdWall unwalk,
+        mk 3 2 noWalls (exp Red E),
+        mk 0 3 downWall Nothing,
+        mk 1 3 downWall Nothing,
+        mk 2 3 downWall Nothing,
+        mk 3 3 rdWall Nothing
+      ]
+    }, {
+      entrance: { side: N, offset: 2 },
+      escalators: Set.fromFoldable [ Tuple (mp 2 0) (mp 1 2) ],
+      cells: Map.fromFoldable [
+        mk 0 0 rightWall (warp Yellow),
+        mk 1 0 rightWall unwalk,
+        mk 2 0 rdWall (Just STEntrance),
+        mk 3 0 rdWall unwalk,
+        mk 0 1 rightWall (exp Purple W),
+        mk 1 1 downWall unwalk,
+        mk 2 1 rdWall unwalk,
+        mk 3 1 rightWall (weapon Red),
+        mk 0 2 downWall Nothing,
+        mk 1 2 noWalls Nothing,
+        mk 2 2 downWall Nothing,
+        mk 3 2 rdWall Nothing,
+        mk 0 3 rdWall unwalk,
+        mk 1 3 rdWall (warp Green),
+        mk 2 3 downWall unwalk,
+        mk 3 3 rdWall unwalk
+      ]
+    }, {
+      entrance: { side: W, offset: 1 },
+      escalators: Set.empty,
+      cells: Map.fromFoldable [
+        mk 0 0 rightWall (warp Purple),
+        mk 1 0 rdWall unwalk,
+        mk 2 0 rightWall (exp Red N),
+        mk 3 0 rightWall unwalk,
+        mk 0 1 downWall (Just STEntrance),
+        mk 1 1 rightWall Nothing,
+        mk 2 1 rightWall Nothing,
+        mk 3 1 rdWall unwalk,
+        mk 0 2 rightWall unwalk,
+        mk 1 2 noWalls Nothing,
+        mk 2 2 downWall Nothing,
+        mk 3 2 downWall (exp Green E),
+        mk 0 3 rightWall unwalk,
+        mk 1 3 rdWall (weapon Yellow),
+        mk 2 3 downWall unwalk,
+        mk 3 3 rdWall unwalk
+      ]
+    }, {
+      entrance: { side: E, offset: 2 },
+      escalators: Set.empty,
+      cells: Map.fromFoldable [
+        mk 0 0 noWalls Nothing,
+        mk 1 0 downWall Nothing,
+        mk 2 0 rightWall (exp Green N),
+        mk 3 0 rdWall unwalk,
+        mk 0 1 rdWall (exp Red W),
+        mk 1 1 downWall (Just STTimer),
+        mk 2 1 noWalls Nothing,
+        mk 3 1 rightWall Nothing,
+        mk 0 2 noWalls Nothing,
+        mk 1 2 downWall Nothing,
+        mk 2 2 rightWall Nothing,
+        mk 3 2 downWall (Just STEntrance),
+        mk 0 3 downWall Nothing,
+        mk 1 3 rightWall (exp Yellow S),
+        mk 2 3 rdWall (warp Purple),
         mk 3 3 rdWall unwalk
       ]
     }

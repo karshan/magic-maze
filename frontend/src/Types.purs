@@ -45,6 +45,8 @@ data SpecialTile =
   | STEntrance
   | STExplore PlayerColor Dir
   | STWarp PlayerColor
+  | STExit PlayerColor Dir
+  | STWeapon PlayerColor
   | STTimer
 derive instance eqSpecialTile :: Eq SpecialTile
 derive instance ordSpecialTile :: Ord SpecialTile
@@ -85,7 +87,7 @@ data Inputs =
 
 -- TODO nonempty map like dirmap
 type PlayerPositions = Map PlayerColor MapPoint
-type GameState = { maze :: Maze, players :: PlayerPositions, dragging :: Maybe DragState, renderOffset :: Point }
+type GameState = { maze :: Maze, tiles :: Array Tile, players :: PlayerPositions, dragging :: Maybe DragState, renderOffset :: Point }
 type DragState = { playerColor :: PlayerColor, dragPoint :: Point }
 
 data Command =
