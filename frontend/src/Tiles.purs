@@ -32,6 +32,7 @@ translateTile :: MapPoint -> Tile -> Tile
 translateTile mp t = t { cells = mapKeys (_ + mp) t.cells, escalators = Set.map (\(Tuple mp1 mp2) -> Tuple (mp1 + mp) (mp2 + mp)) t.escalators }
 
 -- FIXME rewrite fold to ensure it runs in increasing order of x coordinate
+-- TODO rename rotateWallsAndSpecial
 rotateWalls :: Int -> Cells -> Cells
 rotateWalls 0 cells = cells
 rotateWalls n cells =
@@ -42,14 +43,15 @@ rotateWalls n cells =
           rotateDir E = S
           rotateDir S = W
           rotateDir W = N
-          rotateExplore (Just (STExplore col dir)) = Just $ STExplore col (rotateDir dir)
-          rotateExplore s = s
+          rotateSpecial (Just (STExplore col dir)) = Just $ STExplore col (rotateDir dir)
+          rotateSpecial (Just (STExit col dir)) = Just $ STExit col (rotateDir dir)
+          rotateSpecial s = s
           grd b a = if b then a else pure unit
       acc
       modify_ (Map.update (\a -> Just $ a { walls = { right: false, down: origCell.walls.right } }) i)
       grd origCell.walls.down
         (modify_ (Map.update (\a -> Just $ a { walls = { right: true, down: a.walls.down } }) (west i)))
-      modify_ (Map.update (\a -> Just $ a { special = rotateExplore a.special }) i))
+      modify_ (Map.update (\a -> Just $ a { special = rotateSpecial a.special }) i))
     (pure unit)
     cells
 
@@ -88,6 +90,7 @@ rotateAndTranslate mp dir tile  =
            S -> translateTile (mp + mkMp (negate $ findEntrance north) 1) rotated
            W -> translateTile (mp + mkMp (-4) (negate $ findEntrance east)) rotated
 
+-- FIXME add border walls
 mergeTiles :: Maze -> Tile -> MapPoint -> Dir -> Maybe Maze
 mergeTiles cur newTile mp dir = do
   let theArray :: forall a. Array a -> Array a

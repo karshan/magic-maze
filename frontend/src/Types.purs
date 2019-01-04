@@ -149,6 +149,8 @@ data AssetName =
     APlayer PlayerColor
   | AExplore PlayerColor
   | AWarp PlayerColor
+  | AExit PlayerColor
+  | AWeapon PlayerColor
   | ABackground
 derive instance eqAssetName :: Eq AssetName
 derive instance ordAssetName :: Ord AssetName

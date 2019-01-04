@@ -14,18 +14,39 @@ import Signal.DOM (DimensionPair)
 
 type ColorSet = { base :: Color, light1 :: Color, light2 :: Color }
 
+-- TODO lol flipVertical is actually flipHorizontal rename everywhere
 flipVertical = scale (-1.0) 1.0
 flipHorizontal = scale 1.0 (-1.0)
 
 -- FIXME all the translations are a bit off. fix with the help of figma
 drawCellExplore :: Dir -> Drawing -> Drawing
 drawCellExplore dir =
-  let mapT = identity -- mapToScreenD dims (MapPoint { x, y })
+  case dir of
+    N -> translate (51.0 - tileHalfWidth) (-3.0)
+    S -> translate (80.0 - tileHalfWidth) (2.0 * tileHalfHeight) <<< flipVertical <<< flipHorizontal
+    E -> translate (-5.0) (2.0 * tileHalfHeight) <<< flipHorizontal
+    W -> translate 20.0 (-5.0) <<< flipVertical
+
+exitWidth = 61.0
+exitHeight = 56.0
+
+drawCellExit :: Dir -> Drawing -> Drawing
+drawCellExit dir =
+  let center = translate (-exitWidth/2.0) (-exitHeight/2.0)
+      uncenter = translate (exitWidth/2.0) (exitHeight/2.0)
   in case dir of
-    N -> translate (51.0 - tileHalfWidth) (-3.0) <<< mapT
-    S -> translate (80.0 - tileHalfWidth) (2.0 * tileHalfHeight) <<< mapT <<< flipVertical <<< flipHorizontal
-    E -> translate (-5.0) (2.0 * tileHalfHeight) <<< mapT <<< flipHorizontal
-    W -> translate 20.0 (-5.0) <<< mapT <<< flipVertical
+    N -> translate (35.0 - tileHalfWidth) 8.0 <<< uncenter <<< flipVertical <<< center
+    S -> translate (32.0 - tileHalfWidth) 3.0 <<< uncenter <<< flipHorizontal <<< center
+    E -> translate (32.0 - tileHalfWidth) 3.0 <<< uncenter <<< flipHorizontal <<< flipVertical <<< center
+    W -> translate (35.0 - tileHalfWidth) 8.0
+
+drawCellWeapon :: PlayerColor -> Drawing -> Drawing
+drawCellWeapon col =
+  case col of
+    Yellow -> translate (41.0 - tileHalfWidth) (-72.0)
+    Red -> translate (39.0 - tileHalfWidth) (-25.0)
+    Green -> translate (26.0 - tileHalfWidth) (-80.0)
+    Purple -> translate (32.0 - tileHalfWidth) (-48.0)
 
 drawCellWarp :: Drawing -> Drawing
 drawCellWarp = translate (-tileHalfWidth + 27.0) 0.0
@@ -37,9 +58,15 @@ cell' assets (Just (STExplore col dir)) le re = cell' assets Nothing le re <>
   drawCellExplore dir (maybe mempty image $ lookup (AExplore col) assets)
 cell' assets (Just (STWarp col)) le re = cell' assets Nothing le re <>
   drawCellWarp (maybe mempty image $ lookup (AWarp col) assets)
+cell' assets (Just (STExit col dir)) le re = cell' assets Nothing le re <>
+  drawCellExit dir (maybe mempty image $ lookup (AExit col) assets)
 cell' assets (Just STTimer) le re = cell' assets Nothing le re <>
   (outlined (outlineColor (rgba 255 0 0 1.0)) (rectangle (-5.0) 20.0 10.0 10.0))
 cell' _ _ le re = cell (rgb 0xE6 0xF1 0xF8) (rgb 0xC0 0xDB 0xEC) le re
+
+cellWeapon :: Assets -> Maybe SpecialTile -> Drawing
+cellWeapon assets (Just (STWeapon col)) = drawCellWeapon col (maybe mempty image $ lookup (AWeapon col) assets)
+cellWeapon _ _ = mempty
 
 -- All translations are relative to cell NW corner unless specified
 cell :: Color -> Color -> Boolean -> Boolean -> Drawing

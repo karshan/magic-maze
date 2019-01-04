@@ -38,7 +38,7 @@ import Web.HTML.HTMLDocument
 import Unsafe.Coerce -- TODO move to purescript-canvas
 
 import GameLogic
-import GFX.Cell (drawCell, drawCellWall)
+import GFX.Cell (drawCell, drawCellWall, drawCellWeapon)
 
 translate' :: Point -> Drawing -> Drawing
 translate' { x, y } = translate x y
@@ -71,8 +71,9 @@ renderMaze ctx { maze, offscreenDims, assets } = do
   D.render ctx (filled (fillColor (rgba 0 0 0 0.0)) (rectangle 0.0 0.0 (toNumber offscreenDims.w) (toNumber offscreenDims.h)))
   let cells = forAllCells maze (drawCell assets offscreenDims maze.cells)
   let walls = forAllCells maze (drawCellWall offscreenDims maze.cells)
+  let weapons = forAllCells maze (drawCellWeapon assets offscreenDims maze.cells)
   let escalators = foldMap (\(Tuple mp1 mp2) -> drawEscalator offscreenDims mp1 mp2) maze.escalators
-  D.render ctx (cells <> walls <> escalators)
+  D.render ctx (cells <> walls <> escalators <> weapons)
 
 renderText :: Number -> Number -> Color -> String -> Drawing
 renderText x y c s = D.text (D.font D.monospace 12 mempty) x y (D.fillColor c) s
@@ -161,6 +162,11 @@ main = onDOMContentLoaded do
                         Tuple (AWarp Yellow) "svg/warp-yellow.svg",
                         Tuple (AWarp Green) "svg/warp-green.svg",
                         Tuple (AWarp Purple) "svg/warp-purple.svg",
+                        Tuple (AWeapon Red) "svg/weapon-red.svg",
+                        Tuple (AWeapon Yellow) "svg/weapon-yellow.svg",
+                        Tuple (AWeapon Green) "svg/weapon-green.svg",
+                        Tuple (AWeapon Purple) "svg/weapon-purple.svg",
+                        Tuple (AExit Purple) "svg/exit-purple.svg",
                         Tuple ABackground "svg/background.svg"
                       ]
             -- TODO rerenderChan should only change when the maze changes, right now it changes on every server command received
