@@ -3,7 +3,6 @@ module Tiles where
 import Types
 
 import Prelude
-import Control.Monad.State
 import Data.Array ((..))
 import Data.Foldable
 import Data.FoldableWithIndex
@@ -32,29 +31,31 @@ mapKeys f m =
 translateTile :: MapPoint -> Tile -> Tile
 translateTile mp t = t { cells = mapKeys (_ + mp) t.cells, escalators = Set.map (\(Tuple mp1 mp2) -> Tuple (mp1 + mp) (mp2 + mp)) t.escalators }
 
--- FIXME rewrite fold to ensure it runs in increasing order of x coordinate
--- probably best to generate a new cells rather than work in the state monad
 rotateCells :: Int -> Cells -> Cells
 rotateCells 0 cells = cells
 rotateCells n cells =
-  rotateCells (n - 1) $ flip execState cells $ foldlWithIndex
-    (\i acc origCell -> do
-      let west (MapPoint { x, y }) = MapPoint { x: x - 1, y }
-          rotateDir N = E
-          rotateDir E = S
-          rotateDir S = W
-          rotateDir W = N
-          rotateSpecial (Just (STExplore col dir)) = Just $ STExplore col (rotateDir dir)
-          rotateSpecial (Just (STExit col dir)) = Just $ STExit col (rotateDir dir)
-          rotateSpecial s = s
-          grd b a = if b then a else pure unit
-      acc
-      modify_ (Map.update (\a -> Just $ a { walls = { right: false, down: origCell.walls.right } }) i)
-      grd origCell.walls.down
-        (modify_ (Map.update (\a -> Just $ a { walls = { right: true, down: a.walls.down } }) (west i)))
-      modify_ (Map.update (\a -> Just $ a { special = rotateSpecial a.special }) i))
-    (pure unit)
-    cells
+  let mp x y = MapPoint { x, y }
+      rotateDir N = E
+      rotateDir E = S
+      rotateDir S = W
+      rotateDir W = N
+      rotateSpecial (Just (STExplore col dir)) = Just $ STExplore col (rotateDir dir)
+      rotateSpecial (Just (STExit col dir)) = Just $ STExit col (rotateDir dir)
+      rotateSpecial s = s
+  in rotateCells (n - 1) $
+    foldMap
+      (\x ->
+        foldMap
+          (\y ->
+              let defaultCell = { special: Nothing, walls: { right: false, down: false } }
+                  origCell = fromMaybe defaultCell $ Map.lookup (mp x y) cells
+                  eastCell = fromMaybe defaultCell $ Map.lookup (mp (x + 1) y) cells
+              in Map.singleton (mp x y)
+                { special: rotateSpecial origCell.special,
+                  walls: { right: eastCell.walls.down, down: origCell.walls.right }
+                })
+          (0..3))
+      (0..3)
 
 -- We can't do rotateWalls n ... rotatePoint n. because the points and walls need to be rotated
 -- 90 degrees at a time together.
