@@ -2,7 +2,7 @@ module GameLogic where
 
 import Control.Monad.Except
 import Control.Monad.State
-import Data.Array
+import Data.Array hiding (null)
 import Data.Either
 import Data.Foldable
 import Data.FoldableWithIndex
@@ -60,6 +60,14 @@ blockedByWall maze (MapPoint { x: cx, y: cy }) (MapPoint { x: tx, y: ty }) dir =
     W -> any (\x -> maybe true (_.walls.right) $ Map.lookup (MapPoint { x, y: cy }) maze.cells) (tx..(cx - 1))
     E -> any (\x -> maybe true (_.walls.right) $ Map.lookup (MapPoint { x, y: cy }) maze.cells) (cx..(tx - 1))
 
+blockedByPlayer :: Maze -> PlayerPositions -> MapPoint -> MapPoint -> Dir -> Boolean
+blockedByPlayer maze players (MapPoint { x: cx, y: cy }) (MapPoint { x: tx, y: ty }) dir =
+  case dir of
+    N -> any (\y -> not $ null $ Map.filter (_ == MapPoint { x: cx, y }) players) (ty..(cy - 1))
+    S -> any (\y -> not $ null $ Map.filter (_ == MapPoint { x: cx, y }) players) ((cy + 1)..ty)
+    W -> any (\x -> not $ null $ Map.filter (_ == MapPoint { x, y: cy }) players) (tx..(cx - 1))
+    E -> any (\x -> not $ null $ Map.filter (_ == MapPoint { x, y: cy }) players) ((cx + 1)..tx)
+
 getDirection :: MapPoint -> MapPoint -> Maybe Dir
 getDirection (MapPoint { x: cx, y: cy }) (MapPoint { x: tx, y: ty }) =
   if cx == tx then
@@ -93,7 +101,7 @@ evalCommand (PlayerMove pCol targetPos) gs = maybe gs identity $ do
     else do
       dir <- getDirection currentPos targetPos
       guard (not $ blockedByWall gs.maze currentPos targetPos dir) (pure unit)
-      -- FIXME guard (not $ blockedByPlayer gs.maze gs.players currentPos targetPos dir)
+      guard (not $ blockedByPlayer gs.maze gs.players currentPos targetPos dir) (pure unit)
       pure $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
 evalCommand (Explore mp dir) gs =
   maybe gs (gs { maze = _, tiles = fromMaybe [] (tail gs.tiles) })
@@ -139,7 +147,7 @@ handleExplore mouseInputs =
               (\x y cell ->
                   case cell.special of
                        (Just (STExplore color dir)) ->
-                          -- FIXME only expore if neighboring cell is empty
+                          -- TODO only explore if neighboring cell is empty (actually exploring is still prevented by mergeTiles)
                           if Map.lookup color gameState.players == Just (MapPoint { x, y }) then
                             let mp = MapPoint { x, y }
                                 m = First $ evalExploreBBox mouseInputs.offscreenDims dir mp
