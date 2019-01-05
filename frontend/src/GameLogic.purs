@@ -6,6 +6,7 @@ import Data.Array hiding (null)
 import Data.Either
 import Data.Foldable
 import Data.FoldableWithIndex
+import Data.Int
 import Data.Maybe
 import Data.Maybe.First
 import Data.Monoid
@@ -29,6 +30,7 @@ import GFX.Cell (evalExploreBBox)
 import Signal.Channel (Channel)
 import Signal.Channel (send) as Chan
 import Web.Socket.WebSocket as WS
+import Web.UIEvent.WheelEvent (deltaX, deltaY)
 
 initialState :: GameState
 initialState = {
@@ -129,7 +131,7 @@ data DragCommand =
     StartDrag
   | EndDrag DragState
 
--- FIXME explore and drag can occur on the same mouse press
+-- TODO explore and drag can occur on the same mouse press
 -- only one should occur on one mousepress
 gameLogicState :: MouseInputs -> State GameState (Maybe Command)
 gameLogicState mouseInputs = do
@@ -178,6 +180,16 @@ handleDrag mouseInputs = do
               })
           pure (Just command)
 
+clipRenderOffset :: DimensionPair -> DirMap Int -> Point -> Point
+clipRenderOffset offscreenDims { up, down, left, right } { x: curX, y: curY } =
+  let mp x y = MapPoint { x, y }
+      clip a lower upper = if a < lower then lower else if a > upper then upper else a
+      sLeft = _.x $ unwrap $ mapToScreen offscreenDims (mp left down)
+      sRight = _.x $ unwrap $ mapToScreen offscreenDims (mp right up)
+      sUp = _.y $ unwrap $ mapToScreen offscreenDims (mp left up)
+      sDown = _.y $ unwrap $ mapToScreen offscreenDims (mp right down)
+   in { x: clip curX (sLeft - 500.0) (sRight - 100.0), y: clip curY (sUp - 500.0) (sDown - 100.0) }
+
 gameLogic :: Channel Maze -> Inputs -> GameState -> Effect GameState
 gameLogic rerenderChan inputs gameState =
   case inputs of
@@ -198,7 +210,11 @@ gameLogic rerenderChan inputs gameState =
           yDown = if arrowKeys.down then 1.0 else 0.0
           cx = gameState.renderOffset.x
           cy = gameState.renderOffset.y
-      pure $ gameState { renderOffset = { x: cx + mul * (xLeft + xRight), y: cy + mul * (yUp + yDown) } }
+          wx = fromMaybe 0.0 (deltaX <$> arrowKeys.mouseWheel)
+          wy = fromMaybe 0.0 (deltaY <$> arrowKeys.mouseWheel)
+          -- FIXME prevent scrolling too far away from the existing maze.
+      pure $ gameState { renderOffset = clipRenderOffset arrowKeys.offscreenDims gameState.maze.borders
+                { x: cx + mul * (xLeft + xRight) + wx, y: cy + mul * (yUp + yDown) + wy } }
     ServerMsg mMsg -> do
       -- TODO error logging
       let (decodedMsg :: Maybe Command) =

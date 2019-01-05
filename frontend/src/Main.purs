@@ -31,6 +31,7 @@ import Graphics.Drawing.Font as D
 import Signal (Signal, foldp, sampleOn, runSignal, constant, map2, merge)
 import Signal.Channel (channel, send, subscribe)
 import Signal.WebSocket (create) as WS
+import Signal.MouseWheel (create) as Wheel
 import Web.DOM.Document
 import Web.HTML
 import Web.HTML.Window
@@ -80,7 +81,7 @@ renderText x y c s = D.text (D.font D.monospace 12 mempty) x y (D.fillColor c) s
 
 render :: Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Assets -> Point -> GameState -> Effect Unit
 render ctx offscreenCanvas offscreenDims screenDims assets realMouse gameState = do
-  let debugText = renderText 100.0 100.0 white (show $ length gameState.tiles)
+  let debugText = renderText 100.0 100.0 white (show gameState.renderOffset)
   -- TODO draw dragging player first, then in descending order by y coordinate
   let players =
         (foldMapWithIndex
@@ -133,13 +134,16 @@ main = onDOMContentLoaded do
     mPressed <- mouseButtonPressed MouseLeftButton
     log "creating websocket"
     { ws, serverMsg } <- WS.create "ws://localhost:3105/" -- "wss://tmp.karshan.me/ws/"
+    mouseWheel <- Wheel.create
     maybe
         (log "error no canvas")
         (\canvas -> do
             let mouseMove = { offscreenDims: _, mousePos: _, mousePressed: _, ws: _ } <$>
                            offscreenDims <*> mPos <*> mPressed <*> ws
-            let arrowKeys = { up: _, right: _, down: _, left: _ } <$> upKey <*> rightKey <*> downKey <*> leftKey
-            let inputs = merge (Keyboard <$> arrowKeys) $ merge (Mouse <$> sampleOn mPressed mouseMove) (ServerMsg <$> serverMsg)
+            let arrowKeys = { offscreenDims: _, up: _, right: _, down: _, left: _, mouseWheel: _ } <$>
+                            offscreenDims <*> upKey <*> rightKey <*> downKey <*> leftKey <*> mouseWheel
+            let inputs = merge (Keyboard <$> arrowKeys) $
+                  merge (Mouse <$> sampleOn mPressed mouseMove) (ServerMsg <$> serverMsg)
             rerenderChan <- channel initialState.maze
             game <- foldEffect (gameLogic rerenderChan) initialState inputs
             let realMousePos = map2 (\g m -> g.renderOffset + toPoint m) game mPos

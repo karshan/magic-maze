@@ -21,6 +21,7 @@ import Graphics.Drawing (Point)
 import Graphics.Canvas (CanvasImageSource)
 import Signal.DOM (DimensionPair, CoordinatePair)
 import Web.Socket.WebSocket (WebSocket)
+import Web.UIEvent.WheelEvent (WheelEvent)
 
 type Rect  = { x :: Number, y :: Number, w :: Number, h :: Number }
 
@@ -77,9 +78,13 @@ forAllCells maze f =
         (maze.borders.up .. maze.borders.down))
     (maze.borders.left .. maze.borders.right)
 
-type RealMouseInputs = { offscreenDims :: DimensionPair, realMousePos :: Point, mousePressed :: Boolean, ws :: Maybe (WebSocket) }
-type MouseInputs = { offscreenDims :: DimensionPair, mousePos :: CoordinatePair, mousePressed :: Boolean, ws :: Maybe (WebSocket) }
-type KeyboardInputs = DirMap Boolean
+type RealMouseInputs = 
+  { offscreenDims :: DimensionPair, realMousePos :: Point, mousePressed :: Boolean, ws :: Maybe (WebSocket) }
+type MouseInputs = 
+  { offscreenDims :: DimensionPair, mousePos :: CoordinatePair, mousePressed :: Boolean, ws :: Maybe (WebSocket) }
+type KeyboardInputs = 
+  { offscreenDims :: DimensionPair, up :: Boolean, down :: Boolean, left :: Boolean, right :: Boolean,
+    mouseWheel :: Maybe WheelEvent }
 data Inputs =
     Mouse MouseInputs
   | Keyboard KeyboardInputs

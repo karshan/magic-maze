@@ -18,7 +18,8 @@
     "purescript-websocket-moderate": "^4.0.0",
     "purescript-web-socket": "^1.0.0",
     "purescript-web-dom": "^1.0.0",
-    "purescript-web-html": "^1.2.0"
+    "purescript-web-html": "^1.2.0",
+    "purescript-web-uievents": "^1.1.0"
   },
   "devDependencies": {
     "purescript-psci-support": "^4.0.0"
