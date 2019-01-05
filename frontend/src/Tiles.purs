@@ -7,6 +7,7 @@ import Control.Monad.State
 import Data.Array ((..))
 import Data.Foldable
 import Data.FoldableWithIndex
+import Data.FunctorWithIndex
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe.First (First(..))
@@ -32,11 +33,11 @@ translateTile :: MapPoint -> Tile -> Tile
 translateTile mp t = t { cells = mapKeys (_ + mp) t.cells, escalators = Set.map (\(Tuple mp1 mp2) -> Tuple (mp1 + mp) (mp2 + mp)) t.escalators }
 
 -- FIXME rewrite fold to ensure it runs in increasing order of x coordinate
--- TODO rename rotateWallsAndSpecial
-rotateWalls :: Int -> Cells -> Cells
-rotateWalls 0 cells = cells
-rotateWalls n cells =
-  rotateWalls (n - 1) $ flip execState cells $ foldlWithIndex
+-- probably best to generate a new cells rather than work in the state monad
+rotateCells :: Int -> Cells -> Cells
+rotateCells 0 cells = cells
+rotateCells n cells =
+  rotateCells (n - 1) $ flip execState cells $ foldlWithIndex
     (\i acc origCell -> do
       let west (MapPoint { x, y }) = MapPoint { x: x - 1, y }
           rotateDir N = E
@@ -59,7 +60,31 @@ rotateWalls n cells =
 -- 90 degrees at a time together.
 rotateTile :: Int -> Tile -> Tile
 rotateTile 0 t = t
-rotateTile n t = rotateTile (n - 1) $ t { cells = rotateWalls 1 $ mapKeys (rotatePoint 1) t.cells, escalators = Set.map (\(Tuple mp1 mp2) -> Tuple (rotatePoint 1 mp1) (rotatePoint 1 mp2)) t.escalators }
+rotateTile n t = rotateTile (n - 1) $ t { cells = rotateCells 1 $ mapKeys (rotatePoint 1) t.cells, escalators = Set.map (\(Tuple mp1 mp2) -> Tuple (rotatePoint 1 mp1) (rotatePoint 1 mp2)) t.escalators }
+
+addBorderWalls :: Tile -> Tile
+addBorderWalls t = t { cells =
+  let noBorderWall (Just (STExplore _ _)) = true
+      noBorderWall (Just STEntrance) = true
+      noBorderWall _ = false
+  in
+    mapWithIndex
+      (\(MapPoint { x, y }) c ->
+        if noBorderWall c.special then
+          c
+        else
+          if x == 3 then
+            if y == 3 then
+              c { walls = { right: true, down: true } }
+            else
+              c { walls = c.walls { right = true } }
+          else
+            if y == 3 then
+              c { walls = c.walls { down = true } }
+            else
+              c)
+      t.cells
+    }
 
 dirToInt :: Dir -> Int
 dirToInt N = 0
@@ -73,7 +98,7 @@ getRotation explore entrance = (dirToInt explore - dirToInt entrance + 2) `mod` 
 rotateAndTranslate :: MapPoint -> Dir -> Tile -> Tile
 rotateAndTranslate mp dir tile  =
   let mkMp x y = MapPoint {x,y}
-      rotated = rotateTile (getRotation dir tile.entrance.side) tile
+      rotated = addBorderWalls $ rotateTile (getRotation dir tile.entrance.side) tile
       findEntrance f = fromMaybe 0 $ unwrap $
           foldMap
             (\i -> First $ do
@@ -90,7 +115,6 @@ rotateAndTranslate mp dir tile  =
            S -> translateTile (mp + mkMp (negate $ findEntrance north) 1) rotated
            W -> translateTile (mp + mkMp (-4) (negate $ findEntrance east)) rotated
 
--- FIXME add border walls
 mergeTiles :: Maze -> Tile -> MapPoint -> Dir -> Maybe Maze
 mergeTiles cur newTile mp dir = do
   let theArray :: forall a. Array a -> Array a

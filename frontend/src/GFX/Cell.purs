@@ -11,7 +11,6 @@ import GFX as GFX
 import Types
 import Isometric
 
--- FIXME this fails to draw NW corner in the case the NW corner has no NW neighbor
 drawCell :: Assets -> DimensionPair -> Cells -> Int -> Int -> Cell -> Drawing
 drawCell assets dims maze x y cell =
   let mp x_ y_ = MapPoint { x: x_, y: y_ }
@@ -32,6 +31,7 @@ drawCellWeapon assets dims maze x y cell =
         assets
         cell.special)
 
+-- FIXME this fails to draw NW corner in the case the NW corner has no NW neighbor
 drawCellWall :: DimensionPair -> Cells -> Int -> Int -> Cell -> Drawing
 drawCellWall dims maze x y cell =
  let mp x_ y_ = MapPoint { x: x_, y: y_ }

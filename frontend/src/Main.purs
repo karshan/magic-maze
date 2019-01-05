@@ -132,7 +132,7 @@ main = onDOMContentLoaded do
     mPos <- mousePos
     mPressed <- mouseButtonPressed MouseLeftButton
     log "creating websocket"
-    { ws, serverMsg } <- WS.create "wss://tmp.karshan.me/ws/"
+    { ws, serverMsg } <- WS.create "ws://localhost:3105/" -- "wss://tmp.karshan.me/ws/"
     maybe
         (log "error no canvas")
         (\canvas -> do
