@@ -28,6 +28,7 @@ executables:
     - aeson
     - containers
     - http-types
+    - lens
     - protolude
     - random
     - wai
