@@ -6,17 +6,19 @@ import Data.Foldable (foldMap)
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Show (genericShow)
 import Data.Map (lookup)
+import Data.Map as Map
 import Data.Maybe (Maybe (..), maybe)
-import Data.Newtype (class Newtype)
+import Data.Newtype (class Newtype, unwrap)
 import Data.Set (Set)
+import Data.Set as Set
 import Foreign
-import Foreign.Class
+import Foreign.Class (class Encode, class Decode, encode, decode)
 import Foreign.Generic
 import Foreign.Generic.Types
 import Data.Int (toNumber)
 import Data.Maybe (Maybe)
 import Data.Map (Map)
-import Data.Tuple (Tuple)
+import Data.Tuple (Tuple (..))
 import Graphics.Drawing (Point)
 import Graphics.Canvas (CanvasImageSource)
 import Signal.DOM (DimensionPair, CoordinatePair)
@@ -26,6 +28,13 @@ import Web.UIEvent.WheelEvent (WheelEvent)
 type Rect  = { x :: Number, y :: Number, w :: Number, h :: Number }
 
 type DirMap v = { left :: v, up :: v, right :: v, down :: v }
+newtype WDirMap v = DirMap { left :: v, up :: v, right :: v, down :: v }
+derive instance newTypeDirMap :: Newtype (WDirMap v) _
+derive instance genericDirMap :: Generic (WDirMap v) _
+instance encodeDirMap :: (Encode v) => Encode (WDirMap v) where
+  encode = genericEncode defaultOptions
+instance decodeDirMap :: (Decode v) => Decode (WDirMap v) where
+  decode = genericDecode defaultOptions
 
 data Dir =
     N
@@ -58,12 +67,67 @@ instance encodeSpecialTile :: Encode SpecialTile where
 instance decodeSpecialTile :: Decode SpecialTile where
   decode = genericDecode defaultOptions
 
-type Cells = Map MapPoint Cell
 type Escalator = Tuple MapPoint MapPoint
+data WEscalator = Escalator MapPoint MapPoint
+derive instance genericEscalator :: Generic WEscalator _
+instance encodeEscalator :: Encode WEscalator where
+  encode = genericEncode defaultOptions
+instance decodeEscalator :: Decode WEscalator where
+  decode = genericDecode defaultOptions
+
+type Cells = Map MapPoint Cell
+type WCells = Map MapPoint WCell
 type Maze = { cells :: Cells, borders :: DirMap Int, escalators :: Set Escalator }
+newtype WMaze = Maze { cells :: WCells, borders :: WDirMap Int, escalators :: Array WEscalator }
+derive instance newtypeMaze :: Newtype WMaze _
+derive instance genericWMaze :: Generic WMaze _
+instance encodeWMaze :: Encode WMaze where
+  encode = genericEncode defaultOptions
+instance decodeWMaze :: Decode WMaze where
+  decode = genericDecode defaultOptions
+
+newtype Person = Person { name :: String, age :: Number }
+derive instance genericPerson :: Generic Person _
+instance encodePerson :: Encode Person where
+  encode = genericEncode defaultOptions
+instance decodePerson :: Decode Person where
+  decode = genericDecode defaultOptions
+
 type Entrance = { side :: Dir, offset :: Int }
+newtype WEntrance = Entrance Entrance
+derive instance newtypeEntrance :: Newtype WEntrance _
+derive instance genericEntrance :: Generic WEntrance _
+instance encodeEntrance :: Encode WEntrance where
+  encode = genericEncode defaultOptions
+instance decodeEntrance :: Decode WEntrance where
+  decode = genericDecode defaultOptions
+
 type Tile = { cells :: Cells, entrance :: Entrance, escalators :: Set Escalator }
-type Cell = { walls :: { right :: Boolean, down :: Boolean }, special :: Maybe SpecialTile }
+newtype WTile = Tile { cells :: WCells, entrance :: WEntrance, escalators :: Array WEscalator }
+derive instance newtypeTile :: Newtype WTile _
+derive instance genericTile :: Generic WTile _
+instance encodeTile :: Encode WTile where
+  encode = genericEncode defaultOptions
+instance decodeTile :: Decode WTile where
+  decode = genericDecode defaultOptions
+
+type Walls = { right :: Boolean, down :: Boolean  }
+newtype WWalls = Walls Walls
+derive instance newtypeWalls :: Newtype WWalls _
+derive instance genericWalls :: Generic WWalls _
+instance encodeWalls :: Encode WWalls where
+  encode = genericEncode defaultOptions
+instance decodeWalls :: Decode WWalls where
+  decode = genericDecode defaultOptions
+
+type Cell = { walls :: Walls, special :: Maybe SpecialTile }
+newtype WCell = Cell { walls :: WWalls, special :: Maybe SpecialTile }
+derive instance newtypeCell :: Newtype WCell _
+derive instance genericCell :: Generic WCell _
+instance encodeCell :: Encode WCell where
+  encode = genericEncode defaultOptions
+instance decodeCell :: Decode WCell where
+  decode = genericDecode defaultOptions
 
 forAllCells :: forall m. Monoid m => Maze -> (Int -> Int -> Cell -> m) -> m
 forAllCells maze f =
@@ -93,15 +157,50 @@ data Inputs =
 -- TODO nonempty map like dirmap
 type PlayerPositions = Map PlayerColor MapPoint
 type GameState = { maze :: Maze, tiles :: Array Tile, players :: PlayerPositions, dragging :: Maybe DragState, renderOffset :: Point }
+newtype ServerGameState = ServerGameState { maze :: WMaze, tiles :: Array WTile, players :: PlayerPositions }
 type DragState = { playerColor :: PlayerColor, dragPoint :: Point }
+derive instance genericServerGameState :: Generic ServerGameState _
+instance encodeServerGameState :: Encode ServerGameState where
+  encode = genericEncode defaultOptions
+instance decodeServerGameState :: Decode ServerGameState where
+  decode = genericDecode defaultOptions
+derive instance newtypeServerGameState :: Newtype ServerGameState _
+
+setSGS :: ServerGameState -> GameState -> GameState
+setSGS sgs gs = gs { maze = fromWMaze $ (unwrap sgs).maze, players = gs.players, tiles = gs.tiles }
+
+fromWMaze :: WMaze -> Maze
+fromWMaze (Maze m) = { cells: fromWCells m.cells, borders: unwrap m.borders, escalators: fromWEscalators m.escalators }
+
+fromWEscalators :: Array WEscalator -> Set Escalator
+fromWEscalators es = Set.fromFoldable $ map (\(Escalator a b) -> Tuple a b) es
+
+fromWCells :: Map MapPoint WCell -> Map MapPoint Cell
+fromWCells = map (\(Cell c) -> { walls: (unwrap c.walls), special: c.special })
+
+toSGS :: GameState -> ServerGameState
+toSGS gs = ServerGameState { maze: toWMaze gs.maze, tiles: toWTiles gs.tiles, players: gs.players } -- maze: (toWMaze gs.maze), tiles: gs.tiles, players: gs.players }
+
+toWTiles :: Array Tile -> Array WTile
+toWTiles = map (\t -> Tile { cells: toWCells t.cells, entrance: Entrance t.entrance, escalators: toWEscalators t.escalators })
+
+toWCell :: Cell -> WCell
+toWCell cell = Cell { walls: Walls cell.walls, special: cell.special }
+
+toWCells :: Cells -> WCells
+toWCells = map toWCell
+
+toWEscalators :: Set Escalator -> Array WEscalator
+toWEscalators es = map (\(Tuple a b) -> Escalator a b) $ Set.toUnfoldable es
+
+toWMaze :: Maze -> WMaze
+toWMaze maze = Maze { cells: toWCells maze.cells, borders: DirMap maze.borders, escalators: toWEscalators maze.escalators }
 
 data Command =
     PlayerMove PlayerColor MapPoint
   | Explore MapPoint Dir
-derive instance eqCommand :: Eq Command
-derive instance ordCommand :: Ord Command
+  | SetState ServerGameState
 derive instance genericCommand :: Generic Command _
-instance showComand :: Show Command where show = genericShow
 
 data PlayerColor =
     Red

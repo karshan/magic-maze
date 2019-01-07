@@ -15,6 +15,7 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Tuple
 import Effect
+import Foreign
 import Foreign.Generic
 import Graphics.Drawing
 import Isometric
@@ -108,6 +109,7 @@ evalCommand (PlayerMove pCol targetPos) gs = maybe gs identity $ do
 evalCommand (Explore mp dir) gs =
   maybe gs (gs { maze = _, tiles = fromMaybe [] (tail gs.tiles) })
     (head gs.tiles >>= (\newTile -> mergeTiles gs.maze newTile mp dir))
+evalCommand (SetState sgs) gs = setSGS sgs gs
 
 -- TODO evalBBox in descending order of player y coordinate
 maybeStartDrag :: RealMouseInputs -> PlayerPositions -> Maybe DragState
@@ -217,11 +219,11 @@ gameLogic rerenderChan inputs gameState =
                 { x: cx + mul * (xLeft + xRight) + wx, y: cy + mul * (yUp + yDown) + wy } }
     ServerMsg mMsg -> do
       -- TODO error logging
-      let (decodedMsg :: Maybe Command) =
-            hush <<< runExcept <<< genericDecodeJSON defaultOptions =<< mMsg
-      log (show decodedMsg)
-      maybe (pure gameState)
+      let (decodedMsg :: F Command) =
+            genericDecodeJSON defaultOptions =<< (maybe (fail (ForeignError "nothing")) pure mMsg)
+      -- log (show decodedMsg)
+      either (\e -> log (foldMap renderForeignError e) *> pure gameState)
         (\cmd ->
             let newState = evalCommand cmd gameState
             in Chan.send rerenderChan newState.maze *> pure newState)
-        decodedMsg
+        (runExcept decodedMsg)

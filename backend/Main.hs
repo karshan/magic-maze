@@ -17,7 +17,7 @@ import           System.Environment (getArgs)
 import           System.Random (randomIO)
 
 import Types
-
+import GameData
 
 type ServerState = Map Text Connection
 
@@ -47,6 +47,7 @@ main = do
         wsApp state pendingConn = do
             conn <- acceptRequest pendingConn
             name <- addClient state conn
+            sendTextData conn (encode (SetState initialState))
             flip finally (removeClient state name) $ do
                 forkPingThread conn 30
                 forever $ do
