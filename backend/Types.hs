@@ -11,7 +11,7 @@ import Protolude
 
 data Command =
     PlayerMove PlayerColor MapPoint
-  | Explore MapPoint Dir
+  | Explore Int MapPoint Dir
   | SetState ServerGameState
       deriving (Eq, Ord, Show)
 

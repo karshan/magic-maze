@@ -198,7 +198,7 @@ toWMaze maze = Maze { cells: toWCells maze.cells, borders: DirMap maze.borders, 
 
 data Command =
     PlayerMove PlayerColor MapPoint
-  | Explore MapPoint Dir
+  | Explore Int MapPoint Dir
   | SetState ServerGameState
 derive instance genericCommand :: Generic Command _
 

@@ -4,7 +4,7 @@ import Control.Monad.Except
 import Control.Monad.State
 import Data.Array hiding (null)
 import Data.Either
-import Data.Foldable
+import Data.Foldable hiding (length)
 import Data.FoldableWithIndex
 import Data.Int
 import Data.Maybe
@@ -15,6 +15,7 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Tuple
 import Effect
+import Effect.Random (randomInt)
 import Foreign
 import Foreign.Generic
 import Graphics.Drawing
@@ -106,9 +107,9 @@ evalCommand (PlayerMove pCol targetPos) gs = maybe gs identity $ do
       guard (not $ blockedByWall gs.maze currentPos targetPos dir) (pure unit)
       guard (not $ blockedByPlayer gs.maze gs.players currentPos targetPos dir) (pure unit)
       pure $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
-evalCommand (Explore mp dir) gs =
-  maybe gs (gs { maze = _, tiles = fromMaybe [] (tail gs.tiles) })
-    (head gs.tiles >>= (\newTile -> mergeTiles gs.maze newTile mp dir))
+evalCommand (Explore nextTile mp dir) gs =
+  maybe gs (gs { maze = _, tiles = fromMaybe [] (deleteAt nextTile gs.tiles) })
+    ((gs.tiles !! nextTile) >>= (\newTile -> mergeTiles gs.maze newTile mp dir))
 evalCommand (SetState sgs) gs = setSGS sgs gs
 
 -- TODO evalBBox in descending order of player y coordinate
@@ -138,16 +139,16 @@ data DragCommand =
 
 -- TODO explore and drag can occur on the same mouse press
 -- only one should occur on one mousepress
-gameLogicState :: MouseInputs -> State GameState (Maybe Command)
-gameLogicState mouseInputs = do
+gameLogicState :: Int -> MouseInputs -> State GameState (Maybe Command)
+gameLogicState nextTile mouseInputs = do
   renderOffset <- _.renderOffset <$> get
   let realMouseI = { offscreenDims: mouseInputs.offscreenDims, ws: mouseInputs.ws, mousePressed: mouseInputs.mousePressed, realMousePos: toPoint mouseInputs.mousePos + renderOffset }
-  explore <- handleExplore realMouseI
+  explore <- handleExplore nextTile realMouseI
   drag <- handleDrag realMouseI
   pure $ unwrap $ First drag <> First explore
 
-handleExplore :: RealMouseInputs -> State GameState (Maybe Command)
-handleExplore mouseInputs =
+handleExplore :: Int -> RealMouseInputs -> State GameState (Maybe Command)
+handleExplore nextTile mouseInputs =
   if mouseInputs.mousePressed then do
     gameState <- get
     let mCommand = unwrap $ forAllCells gameState.maze
@@ -159,7 +160,7 @@ handleExplore mouseInputs =
                             let mp = MapPoint { x, y }
                                 m = First $ evalExploreBBox mouseInputs.offscreenDims dir mp
                                       (ScreenPoint mouseInputs.realMousePos)
-                            in const (Explore mp dir) <$> m
+                            in const (Explore nextTile mp dir) <$> m
                           else
                             mempty
                        _ -> mempty)
@@ -201,10 +202,11 @@ clipRenderOffset offscreenDims { up, down, left, right } { x: curX, y: curY } =
    in { x: clip curX (sLeft - 500.0) (sRight - 100.0), y: clip curY (sUp - 500.0) (sDown - 100.0) }
 
 gameLogic :: Channel Maze -> Inputs -> GameState -> Effect GameState
-gameLogic rerenderChan inputs gameState =
+gameLogic rerenderChan inputs gameState = do
+  nextTile <- randomInt 0 (length gameState.tiles)
   case inputs of
     Mouse mouseInputs -> do
-      let (Tuple msgToSend nextGameState) = runState (gameLogicState mouseInputs) gameState
+      let (Tuple msgToSend nextGameState) = runState (gameLogicState nextTile mouseInputs) gameState
       either (maybe (pure unit) log)
         (\{ ws, m } -> WS.sendString ws m)
         (do
