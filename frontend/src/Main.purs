@@ -1,51 +1,47 @@
 module Main where
 
-import Isometric
-import Prelude
-import Signal.DOM
-import Signal.Effect
-import Types
-
-import Color (Color, white, rgb, rgba, black)
+import Color (rgba, white)
 import DOM (onDOMContentLoaded)
-import Data.Array ((..), length)
-import Data.Either (hush)
-import Data.Foldable (class Foldable, foldMap)
-import Data.FoldableWithIndex (foldWithIndexM, foldMapWithIndex, foldlWithIndex)
-import Data.FunctorWithIndex (mapWithIndex)
-import Data.Int (toNumber, round, floor)
-import Data.Map (Map, member, lookup)
+import Data.Foldable (foldMap)
+import Data.FoldableWithIndex (foldWithIndexM, foldMapWithIndex)
+import Data.Int (floor, toNumber)
+import Data.Lens ((^.))
+import Data.Map (Map, lookup)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), maybe, isNothing, isJust)
+import Data.Maybe (Maybe(..), maybe)
 import Data.Maybe.First (First(..))
 import Data.Monoid (guard)
-import Data.Newtype (wrap, unwrap)
+import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Console (log)
 import GFX as GFX
-import Graphics.Canvas (CanvasElement, CanvasImageSource, Context2D, drawImage, getCanvasElementById, getContext2D, setCanvasHeight, setCanvasWidth, tryLoadImage, getImageData, ImageData, putImageDataFull, clearRect, canvasElementToImageSource)
-import Graphics.Drawing
-import Graphics.Drawing as D
-import Graphics.Drawing.Font as D
-import Signal (Signal, foldp, sampleOn, runSignal, constant, map2, merge)
-import Signal.Channel (channel, send, subscribe)
-import Signal.WebSocket (create) as WS
-import Signal.MouseWheel (create) as Wheel
-import Web.DOM.Document
-import Web.HTML
-import Web.HTML.Window
-import Web.HTML.HTMLDocument
-import Unsafe.Coerce -- TODO move to purescript-canvas
-
-import GameLogic
 import GFX.Cell (drawCell, drawCellWall, drawCellWeapon)
+import GameLogic (gameLogic, initialState)
+import Graphics.Canvas (CanvasElement, CanvasImageSource, Context2D, getCanvasElementById, getContext2D, setCanvasHeight, setCanvasWidth, tryLoadImage, canvasElementToImageSource)
+import Graphics.Drawing (Color, Drawing, Point, filled, image, outlined, outlineColor, path, rectangle, lineWidth, translate)
+import Graphics.Drawing (fillColor, render, text) as D
+import Graphics.Drawing.Font (font, monospace) as D
+import Isometric (mapToScreen, mapToScreenD, tileHalfHeight, tileHalfWidth)
+import Prelude
+import Signal (Signal, sampleOn, runSignal, constant, map2, merge)
+import Signal.Channel (channel, send, subscribe)
+import Signal.DOM (DimensionPair, MouseButton(..), animationFrame, keyPressed, mouseButtonPressed, mousePos, windowDimensions)
+import Signal.Effect (foldEffect, mapEffect)
+import Signal.MouseWheel (create) as Wheel
+import Signal.WebSocket (create) as WS
+import Types (Asset, AssetName(..), Assets, DirMap(..), Escalator(..), GameState, Inputs(..), MapPoint, Maze, PlayerColor(..), cells, down, escalators, forAllCells, left, right, toPoint, up)
+import Unsafe.Coerce (unsafeCoerce) -- TODO move to purescript-canvas
+import Web.DOM.Document (createElement)
+import Web.HTML (window)
+import Web.HTML.HTMLDocument (toDocument)
+import Web.HTML.Window (document)
 
 translate' :: Point -> Drawing -> Drawing
 translate' { x, y } = translate x y
 
 keycodes :: DirMap Int
-keycodes = {
+keycodes = DirMap {
         left: 37,
         up: 38,
         right: 39,
@@ -69,12 +65,12 @@ drawEscalator offscreenDims mp1 mp2 =
 
 renderMaze :: Context2D -> { maze :: Maze, offscreenDims :: DimensionPair, assets :: Assets } -> Effect Unit
 renderMaze ctx { maze, offscreenDims, assets } = do
-  D.render ctx (filled (fillColor (rgba 0 0 0 0.0)) (rectangle 0.0 0.0 (toNumber offscreenDims.w) (toNumber offscreenDims.h)))
-  let cells = forAllCells maze (drawCell assets offscreenDims maze.cells)
-  let walls = forAllCells maze (drawCellWall offscreenDims maze.cells)
-  let weapons = forAllCells maze (drawCellWeapon assets offscreenDims maze.cells)
-  let escalators = foldMap (\(Tuple mp1 mp2) -> drawEscalator offscreenDims mp1 mp2) maze.escalators
-  D.render ctx (cells <> walls <> escalators <> weapons)
+  D.render ctx (filled (D.fillColor (rgba 0 0 0 0.0)) (rectangle 0.0 0.0 (toNumber offscreenDims.w) (toNumber offscreenDims.h)))
+  let rcells = forAllCells maze (drawCell assets offscreenDims (maze^.cells))
+  let rwalls = forAllCells maze (drawCellWall offscreenDims (maze^.cells))
+  let rweapons = forAllCells maze (drawCellWeapon assets offscreenDims (maze^.cells))
+  let rescalators = foldMap (\(Escalator mp1 mp2) -> drawEscalator offscreenDims mp1 mp2) (maze^.escalators)
+  D.render ctx (rcells <> rwalls <> rescalators <> rweapons)
 
 renderText :: Number -> Number -> Color -> String -> Drawing
 renderText x y c s = D.text (D.font D.monospace 12 mempty) x y (D.fillColor c) s
@@ -121,10 +117,10 @@ loadAssets toLoad =
 main :: Effect Unit
 main = onDOMContentLoaded do
     frames <- animationFrame
-    upKey <- keyPressed keycodes.up
-    rightKey <- keyPressed keycodes.right
-    downKey <- keyPressed keycodes.down
-    leftKey <- keyPressed keycodes.left
+    upKey <- keyPressed $ keycodes^.up
+    rightKey <- keyPressed $ keycodes^.right
+    downKey <- keyPressed $ keycodes^.down
+    leftKey <- keyPressed $ keycodes^.left
     mcanvas <- getCanvasElementById "canvas"
     doc <- toDocument <$> (document =<< window)
     offscreenCanvas <- unsafeCoerce <$> createElement "canvas" doc

@@ -9,10 +9,15 @@ import Data.Set (Set)
 import PSBridge
 import Protolude
 
-data Command =
-    PlayerMove PlayerColor MapPoint
-  | Explore Int MapPoint Dir
-  | SetState ServerGameState
+data C2SCommand =
+    CPlayerMove PlayerColor MapPoint MapPoint
+  | CExplore MapPoint Dir
+      deriving (Eq, Ord, Show)
+
+data S2CCommand =
+    SPlayerMove PlayerColor MapPoint
+  | SExplore Int MapPoint Dir
+  | SSetState ServerGameState
       deriving (Eq, Ord, Show)
 
 data PlayerColor =
@@ -62,7 +67,8 @@ data ServerGameState = ServerGameState { maze :: Maze, tiles :: [Tile], players 
 $(deriveJSON purescriptOptions ''Dir)
 $(deriveJSON purescriptOptions ''MapPoint)
 $(deriveJSON purescriptOptions ''PlayerColor)
-$(deriveJSON purescriptOptions ''Command)
+$(deriveJSON purescriptOptions ''C2SCommand)
+$(deriveJSON purescriptOptions ''S2CCommand)
 $(deriveJSON purescriptOptions ''SpecialTile)
 $(deriveJSON purescriptOptions ''Walls)
 $(deriveJSON purescriptOptions ''Cell)

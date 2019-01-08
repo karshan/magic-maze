@@ -1,9 +1,10 @@
-{-# LANGUAGE TemplateHaskell       #-}
-{-# LANGUAGE NoImplicitPrelude     #-}
-{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE TemplateHaskell        #-}
+{-# LANGUAGE NoImplicitPrelude      #-}
+{-# LANGUAGE OverloadedStrings      #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
 module Main where
 
 import           Control.Lens
@@ -59,18 +60,16 @@ main = do
             conn <- acceptRequest pendingConn
             name <- addClient state conn
             gs <- view gameState <$> readMVar state
-            sendTextData conn (encode (SetState gs))
+            sendTextData conn (encode (SSetState gs))
             flip finally (removeClient state name) $ do
                 forkPingThread conn 30
                 forever $ do
-                    a <- receiveData conn
-                    let command = (eitherDecode (toS a) :: Either String Command)
-                    case command of
-                        (Right (SetState s)) -> print (players s) >> modifyMVar_ state (\curs -> return (curs & gameState .~ s))
-                        _ -> print command
+                    (a :: Text) <- receiveData conn
+                    let command = (eitherDecode (toS a) :: Either String C2SCommand)
+                    -- FIXME evalCommand, update gamestate and broadcast commands
+                    print command
                     n <- numClients state
                     putText $ "numClients: " <> show n
-                    broadcast state a
 
         redirSlash :: Request -> Request
         redirSlash request = if null (pathInfo request) then request { pathInfo = ["index.html"] } else request
