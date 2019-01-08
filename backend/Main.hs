@@ -66,7 +66,7 @@ main = do
                     a <- receiveData conn
                     let command = (eitherDecode (toS a) :: Either String Command)
                     case command of
-                        (Right (SetState s)) -> putText "updated gameState" >> modifyMVar_ state (\curs -> return (curs & gameState .~ s))
+                        (Right (SetState s)) -> print (players s) >> modifyMVar_ state (\curs -> return (curs & gameState .~ s))
                         _ -> print command
                     n <- numClients state
                     putText $ "numClients: " <> show n

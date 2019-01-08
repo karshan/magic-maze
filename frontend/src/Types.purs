@@ -167,7 +167,7 @@ instance decodeServerGameState :: Decode ServerGameState where
 derive instance newtypeServerGameState :: Newtype ServerGameState _
 
 setSGS :: ServerGameState -> GameState -> GameState
-setSGS sgs gs = gs { maze = fromWMaze $ (unwrap sgs).maze, players = gs.players, tiles = gs.tiles }
+setSGS sgs gs = gs { maze = fromWMaze $ (unwrap sgs).maze, players = (unwrap sgs).players, tiles = gs.tiles }
 
 fromWMaze :: WMaze -> Maze
 fromWMaze (Maze m) = { cells: fromWCells m.cells, borders: unwrap m.borders, escalators: fromWEscalators m.escalators }

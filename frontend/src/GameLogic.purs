@@ -123,11 +123,14 @@ maybeStartDrag i players =
      (First Nothing)
      players
 
-dropPlayer :: RealMouseInputs -> DragState -> Command
-dropPlayer i { playerColor, dragPoint } =
+dropPlayer :: PlayerPositions -> RealMouseInputs -> DragState -> Maybe Command
+dropPlayer players i { playerColor, dragPoint } =
   let playerPosition = screenToMap i.offscreenDims
                 (ScreenPoint $ i.realMousePos - dragPoint + GFX.playerCenterT)
-   in PlayerMove playerColor playerPosition
+   in if Map.lookup playerColor players == Just playerPosition then
+        Nothing
+      else
+        Just $ PlayerMove playerColor playerPosition
 
 data DragCommand =
     StartDrag
@@ -147,7 +150,7 @@ handleExplore :: RealMouseInputs -> State GameState (Maybe Command)
 handleExplore mouseInputs =
   if mouseInputs.mousePressed then do
     gameState <- get
-    pure $ unwrap $ forAllCells gameState.maze
+    let mCommand = unwrap $ forAllCells gameState.maze
               (\x y cell ->
                   case cell.special of
                        (Just (STExplore color dir)) ->
@@ -160,6 +163,8 @@ handleExplore mouseInputs =
                           else
                             mempty
                        _ -> mempty)
+    maybe (pure unit) (\command -> put (evalCommand command gameState)) mCommand
+    pure mCommand
   else
     pure Nothing
 
@@ -176,11 +181,14 @@ handleDrag mouseInputs = do
           put (gameState { dragging = maybeStartDrag mouseInputs gameState.players })
           pure Nothing
         Just (EndDrag dragState) -> do
-          let command = dropPlayer mouseInputs dragState
-          put (evalCommand command gameState {
-                dragging = Nothing
-              })
-          pure (Just command)
+          let mCommand = dropPlayer gameState.players mouseInputs dragState
+          maybe
+            (put (gameState { dragging = Nothing }) *> pure Nothing)
+            (\command ->
+                put (evalCommand command gameState {
+                      dragging = Nothing
+                    }) *> pure (Just command))
+            mCommand
 
 clipRenderOffset :: DimensionPair -> DirMap Int -> Point -> Point
 clipRenderOffset offscreenDims { up, down, left, right } { x: curX, y: curY } =
@@ -202,7 +210,7 @@ gameLogic rerenderChan inputs gameState =
         (do
             ws <- note (Just "WebSocket not open") mouseInputs.ws
             m <- note Nothing msgToSend
-            pure { ws: ws, m: genericEncodeJSON defaultOptions m })
+            pure { ws: ws, m: genericEncodeJSON defaultOptions (SetState $ toSGS nextGameState) })
       pure nextGameState
     Keyboard arrowKeys -> do
       let mul = 5.0
