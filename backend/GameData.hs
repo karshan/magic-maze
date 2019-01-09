@@ -16,7 +16,8 @@ initialState = ServerGameState {
         (Yellow, (MapPoint 2 1)),
         (Green, (MapPoint 1 2)),
         (Purple, (MapPoint 2 2))
-      ]
+      ],
+      _timer = 150
     }
 
 initialTile :: Maze

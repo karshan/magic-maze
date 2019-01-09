@@ -37,7 +37,8 @@ initialState = {
       tiles: [],
       players: Map.empty,
       dragging: Nothing,
-      renderOffset: { x: 1715.0, y: 840.0 } -- TODO calculate from offscreenDims
+      renderOffset: { x: 1715.0, y: 840.0 }, -- TODO calculate from offscreenDims
+      timer: 150
     }
 
 moveMapPoint :: MapPoint -> Dir -> MapPoint
@@ -240,3 +241,5 @@ gameLogic rerenderChan inputs gameState = do
             let newState = evalServerCommand cmd gameState
             in Chan.send rerenderChan newState.maze *> pure newState)
         (runExcept decodedMsg)
+    Tick ->
+      pure $ gameState { timer = gameState.timer - 1 }

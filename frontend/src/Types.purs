@@ -62,9 +62,15 @@ newtype Tile = Tile { cells :: Cells, entrance :: Entrance, escalators :: Array 
 -- TODO nonempty map for playerpositions (like dirmap)
 type PlayerPositions = Map PlayerColor MapPoint
 type DragState = { playerColor :: PlayerColor, dragPoint :: Point }
-type GameState =
-  { maze :: Maze, tiles :: Array Tile, players :: PlayerPositions, dragging :: Maybe DragState, renderOffset :: Point }
-newtype ServerGameState = ServerGameState { maze :: Maze, tiles :: Array Tile, players :: PlayerPositions }
+type GameState = {
+  maze :: Maze,
+  tiles :: Array Tile,
+  players :: PlayerPositions,
+  dragging :: Maybe DragState,
+  renderOffset :: Point,
+  timer :: Int
+  }
+newtype ServerGameState = ServerGameState { maze :: Maze, tiles :: Array Tile, players :: PlayerPositions, timer :: Int }
 
 type RealMouseInputs =
   { offscreenDims :: DimensionPair, realMousePos :: Point, mousePressed :: Boolean, ws :: Maybe (WebSocket) }
@@ -77,6 +83,7 @@ data Inputs =
     Mouse MouseInputs
   | Keyboard KeyboardInputs
   | ServerMsg (Maybe String)
+  | Tick
 
 data C2SCommand =
     CPlayerMove PlayerColor MapPoint MapPoint
@@ -117,8 +124,8 @@ toScreenPoint { x, y } = ScreenPoint { x: toNumber x, y: toNumber y }
 serverGameState :: Lens' GameState ServerGameState
 serverGameState = lens toSGS setFromSGS
   where
-    toSGS gs = ServerGameState { maze: gs.maze, tiles: gs.tiles, players: gs.players }
-    setFromSGS gs (ServerGameState sgs) = gs { maze = sgs.maze, players = sgs.players, tiles = sgs.tiles }
+    toSGS gs = ServerGameState { maze: gs.maze, tiles: gs.tiles, players: gs.players, timer: gs.timer }
+    setFromSGS gs (ServerGameState sgs) = gs { maze = sgs.maze, players = sgs.players, tiles = sgs.tiles, timer = sgs.timer }
 
 left :: forall v. Lens' (DirMap v) v
 left = lens (_.left <<< unwrap) $ \s b -> wrap $ _ { left = b } $ unwrap s

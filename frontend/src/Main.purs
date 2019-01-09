@@ -29,6 +29,7 @@ import Signal.Channel (channel, send, subscribe)
 import Signal.DOM (DimensionPair, MouseButton(..), animationFrame, keyPressed, mouseButtonPressed, mousePos, windowDimensions)
 import Signal.Effect (foldEffect, mapEffect)
 import Signal.MouseWheel (create) as Wheel
+import Signal.Time (every)
 import Signal.WebSocket (create) as WS
 import Types (Asset, AssetName(..), Assets, DirMap(..), Escalator(..), GameState, Inputs(..), MapPoint, Maze, PlayerColor(..), cells, down, escalators, forAllCells, left, right, toPoint, up)
 import Unsafe.Coerce (unsafeCoerce) -- TODO move to purescript-canvas
@@ -77,7 +78,7 @@ renderText x y c s = D.text (D.font D.monospace 12 mempty) x y (D.fillColor c) s
 
 render :: Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Assets -> Point -> GameState -> Effect Unit
 render ctx offscreenCanvas offscreenDims screenDims assets realMouse gameState = do
-  let debugText = renderText 100.0 100.0 white (show gameState.renderOffset)
+  let debugText = renderText 100.0 100.0 white (show gameState.timer)
   -- TODO draw dragging player first, then in descending order by y coordinate
   let players =
         (foldMapWithIndex
@@ -139,7 +140,7 @@ main = onDOMContentLoaded do
             let arrowKeys = { offscreenDims: _, up: _, right: _, down: _, left: _, mouseWheel: _ } <$>
                             offscreenDims <*> upKey <*> rightKey <*> downKey <*> leftKey <*> mouseWheel
             let inputs = merge (Keyboard <$> arrowKeys) $
-                  merge (Mouse <$> sampleOn mPressed mouseMove) (ServerMsg <$> serverMsg)
+                  merge (Mouse <$> sampleOn mPressed mouseMove) $ merge (ServerMsg <$> serverMsg) (const Tick <$> every 1000.0)
             rerenderChan <- channel initialState.maze
             game <- foldEffect (gameLogic rerenderChan) initialState inputs
             let realMousePos = map2 (\g m -> g.renderOffset + toPoint m) game mPos

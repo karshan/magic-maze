@@ -58,6 +58,7 @@ main = do
     Just port <- (readMaybe <=< head) <$> getArgs
     state <- newMVar $ ServerState Map.empty initialState
     run port (websocketsOr defaultConnectionOptions (wsApp state) backupApp)
+    -- FIXME thread that decrements gameState.timer everysecond after the game starts
     where
         wsApp state pendingConn = do
             conn <- acceptRequest pendingConn

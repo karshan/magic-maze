@@ -66,7 +66,7 @@ data Cell = Cell { _walls :: Walls, _special :: Maybe SpecialTile } deriving (Eq
 
 -- TODO nonempty map like dirmap
 type PlayerPositions = Map PlayerColor MapPoint
-data ServerGameState = ServerGameState { _maze :: Maze, _tiles :: [Tile], _players :: PlayerPositions } deriving (Eq, Ord, Show)
+data ServerGameState = ServerGameState { _maze :: Maze, _tiles :: [Tile], _players :: PlayerPositions, _timer :: Int } deriving (Eq, Ord, Show)
 
 $(deriveJSON purescriptOptions ''Dir)
 $(deriveJSON purescriptOptions ''MapPoint)
