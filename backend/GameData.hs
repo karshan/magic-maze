@@ -9,9 +9,9 @@ import qualified Data.Set as Set
 
 initialState :: ServerGameState
 initialState = ServerGameState {
-      maze = initialTile,
-      tiles = [],
-      players = Map.fromList [
+      _maze = initialTile,
+      _tiles = tiles,
+      _players = Map.fromList [
         (Red, (MapPoint 1 1)),
         (Yellow, (MapPoint 2 1)),
         (Green, (MapPoint 1 2)),
@@ -27,39 +27,39 @@ initialTile =
         rdWall = Walls True True
         mp x y = MapPoint x y
     in Maze {
-      cells = Map.fromList [
-        ((MapPoint { x = 0, y = 0 }), Cell { walls = rdWall, special = Just STUnwalkable }),
-        ((MapPoint { x = 1, y = 0 }), Cell { walls = noWalls, special = Nothing }),
-        ((MapPoint { x = 2, y = 0 }), Cell { walls = noWalls, special = Just (STExplore Yellow N) }),
-        ((MapPoint { x = 3, y = 0 }), Cell { walls = rdWall, special = Just (STWarp Green) }),
-        ((MapPoint { x = 0, y = 1 }), Cell { walls = rdWall, special = Just (STExplore Green W) }),
-        ((MapPoint { x = 1, y = 1 }), Cell { walls = noWalls, special = Nothing }),
-        ((MapPoint { x = 2, y = 1 }), Cell { walls = noWalls, special = Nothing }),
-        ((MapPoint { x = 3, y = 1 }), Cell { walls = rdWall, special = Just (STWarp Red) }),
-        ((MapPoint { x = 0, y = 2 }), Cell { walls = downWall, special = Just (STWarp Yellow) }),
-        ((MapPoint { x = 1, y = 2 }), Cell { walls = noWalls, special = Nothing }),
-        ((MapPoint { x = 2, y = 2 }), Cell { walls = noWalls, special = Nothing }),
-        ((MapPoint { x = 3, y = 2 }), Cell { walls = downWall, special = Just (STExplore Purple E) }),
-        ((MapPoint { x = 0, y = 3 }), Cell { walls = downWall, special = Just (STWarp Purple) }),
-        ((MapPoint { x = 1, y = 3 }), Cell { walls = noWalls, special = Just (STExplore Red S) }),
-        ((MapPoint { x = 2, y = 3 }), Cell { walls = downWall, special = Nothing }),
-        ((MapPoint { x = 3, y = 3 }), Cell { walls = rdWall, special = Just STTimer })
+      _cells = Map.fromList [
+        ((MapPoint { _x = 0, _y = 0 }), Cell { _walls = rdWall, _special = Just STUnwalkable }),
+        ((MapPoint { _x = 1, _y = 0 }), Cell { _walls = noWalls, _special = Nothing }),
+        ((MapPoint { _x = 2, _y = 0 }), Cell { _walls = noWalls, _special = Just (STExplore Yellow N) }),
+        ((MapPoint { _x = 3, _y = 0 }), Cell { _walls = rdWall, _special = Just (STWarp Green) }),
+        ((MapPoint { _x = 0, _y = 1 }), Cell { _walls = rdWall, _special = Just (STExplore Green W) }),
+        ((MapPoint { _x = 1, _y = 1 }), Cell { _walls = noWalls, _special = Nothing }),
+        ((MapPoint { _x = 2, _y = 1 }), Cell { _walls = noWalls, _special = Nothing }),
+        ((MapPoint { _x = 3, _y = 1 }), Cell { _walls = rdWall, _special = Just (STWarp Red) }),
+        ((MapPoint { _x = 0, _y = 2 }), Cell { _walls = downWall, _special = Just (STWarp Yellow) }),
+        ((MapPoint { _x = 1, _y = 2 }), Cell { _walls = noWalls, _special = Nothing }),
+        ((MapPoint { _x = 2, _y = 2 }), Cell { _walls = noWalls, _special = Nothing }),
+        ((MapPoint { _x = 3, _y = 2 }), Cell { _walls = downWall, _special = Just (STExplore Purple E) }),
+        ((MapPoint { _x = 0, _y = 3 }), Cell { _walls = downWall, _special = Just (STWarp Purple) }),
+        ((MapPoint { _x = 1, _y = 3 }), Cell { _walls = noWalls, _special = Just (STExplore Red S) }),
+        ((MapPoint { _x = 2, _y = 3 }), Cell { _walls = downWall, _special = Nothing }),
+        ((MapPoint { _x = 3, _y = 3 }), Cell { _walls = rdWall, _special = Just STTimer })
       ],
-      escalators = Set.fromList [ Escalator (mp 0 1) (mp 1 0) ],
-      borders = DirMap {
-        left = 0,
-        up = 0,
-        right = 3,
-        down = 3
+      _escalators = Set.fromList [ Escalator (mp 0 1) (mp 1 0) ],
+      _borders = DirMap {
+        _left = 0,
+        _up = 0,
+        _right = 3,
+        _down = 3
       }
     }
 
 tiles :: [Tile]
 tiles =
-  let noWalls = Walls { right = False, down = False }
-      downWall = Walls { right = False, down = True }
-      rightWall = Walls { right = True, down = False }
-      rdWall = Walls { right = True, down = True }
+  let noWalls = Walls { _right = False, _down = False }
+      downWall = Walls { _right = False, _down = True }
+      rightWall = Walls { _right = True, _down = False }
+      rdWall = Walls { _right = True, _down = True }
       unwalk = Just STUnwalkable
       exp c d = Just (STExplore c d)
       warp c = Just (STWarp c)
@@ -68,9 +68,9 @@ tiles =
       mk x y walls special =
         (mp x y, Cell walls special)
   in [ Tile {
-      entrance = Entrance { side = E, offset = 2 }, -- TODO calculate from .cells
-      escalators = Set.empty,
-      cells = Map.fromList [
+      _entrance = Entrance { _side = E, _offset = 2 }, -- TODO calculate from .cells
+      _escalators = Set.empty,
+      _cells = Map.fromList [
         mk 0 0 rightWall (warp Yellow),
         mk 1 0 rdWall unwalk,
         mk 2 0 rightWall (exp Green N),
@@ -89,9 +89,9 @@ tiles =
         mk 3 3 rdWall unwalk
       ]
     }, Tile {
-      entrance = Entrance { side = S, offset = 1 },
-      escalators = Set.empty,
-      cells = Map.fromList [
+      _entrance = Entrance { _side = S, _offset = 1 },
+      _escalators = Set.empty,
+      _cells = Map.fromList [
         mk 0 0 noWalls Nothing,
         mk 1 0 rightWall Nothing,
         mk 2 0 rightWall (warp Red),
@@ -110,9 +110,9 @@ tiles =
         mk 3 3 rdWall unwalk
       ]
     }, Tile {
-      entrance = Entrance { side = W, offset = 1 },
-      escalators = Set.fromList [ Escalator (mp 2 0) (mp 3 2) ],
-      cells = Map.fromList [
+      _entrance = Entrance { _side = W, _offset = 1 },
+      _escalators = Set.fromList [ Escalator (mp 2 0) (mp 3 2) ],
+      _cells = Map.fromList [
         mk 0 0 downWall (warp Green),
         mk 1 0 noWalls Nothing,
         mk 2 0 rdWall (exp Red N),
@@ -131,9 +131,9 @@ tiles =
         mk 3 3 rightWall (Just (STExit Purple S))
       ]
     }, Tile {
-      entrance = Entrance { side = E, offset = 2 },
-      escalators = Set.empty,
-      cells = Map.fromList [
+      _entrance = Entrance { _side = E, _offset = 2 },
+      _escalators = Set.empty,
+      _cells = Map.fromList [
         mk 0 0 noWalls Nothing,
         mk 1 0 noWalls Nothing,
         mk 2 0 downWall (exp Yellow N),
@@ -152,9 +152,9 @@ tiles =
         mk 3 3 rdWall unwalk
       ]
     }, Tile {
-      entrance = Entrance { side = N, offset = 2 },
-      escalators = Set.empty,
-      cells = Map.fromList [
+      _entrance = Entrance { _side = N, _offset = 2 },
+      _escalators = Set.empty,
+      _cells = Map.fromList [
         mk 0 0 noWalls Nothing,
         mk 1 0 downWall Nothing,
         mk 2 0 downWall (Just STEntrance),
@@ -173,9 +173,9 @@ tiles =
         mk 3 3 rdWall Nothing
       ]
     }, Tile {
-      entrance = Entrance { side = N, offset = 2 },
-      escalators = Set.fromList [ Escalator (mp 2 0) (mp 1 2) ],
-      cells = Map.fromList [
+      _entrance = Entrance { _side = N, _offset = 2 },
+      _escalators = Set.fromList [ Escalator (mp 2 0) (mp 1 2) ],
+      _cells = Map.fromList [
         mk 0 0 rightWall (warp Yellow),
         mk 1 0 rightWall unwalk,
         mk 2 0 rdWall (Just STEntrance),
@@ -194,9 +194,9 @@ tiles =
         mk 3 3 rdWall unwalk
       ]
     }, Tile {
-      entrance = Entrance { side = W, offset = 1 },
-      escalators = Set.empty,
-      cells = Map.fromList [
+      _entrance = Entrance { _side = W, _offset = 1 },
+      _escalators = Set.empty,
+      _cells = Map.fromList [
         mk 0 0 rightWall (warp Purple),
         mk 1 0 rdWall unwalk,
         mk 2 0 rightWall (exp Red N),
@@ -215,9 +215,9 @@ tiles =
         mk 3 3 rdWall unwalk
       ]
     }, Tile {
-      entrance = Entrance { side = E, offset = 2 },
-      escalators = Set.empty,
-      cells = Map.fromList [
+      _entrance = Entrance { _side = E, _offset = 2 },
+      _escalators = Set.empty,
+      _cells = Map.fromList [
         mk 0 0 noWalls Nothing,
         mk 1 0 downWall Nothing,
         mk 2 0 rightWall (exp Green N),

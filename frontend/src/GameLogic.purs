@@ -6,7 +6,7 @@ import Data.Array ((..), (!!), deleteAt)
 import Data.Either (either, note)
 import Data.Foldable (any, foldMap, null)
 import Data.FoldableWithIndex (foldlWithIndex)
-import Data.Lens ((^.))
+import Data.Lens ((^.), (.~))
 import Data.Map as Map
 import Data.Maybe (Maybe (..), fromMaybe, isNothing, maybe)
 import Data.Maybe.First (First (..))
@@ -27,7 +27,7 @@ import Signal.Channel (Channel)
 import Signal.Channel (send) as Chan
 import Signal.DOM (DimensionPair)
 import Tiles (mergeTiles)
-import Types (C2SCommand(..), Cell, Dir(..), DirMap(..), DragState, Escalator(..), GameState, Inputs(..), MapPoint(..), Maze(..), MouseInputs, PlayerPositions, RealMouseInputs, S2CCommand(..), ScreenPoint(..), SpecialTile(..), borders, cells, down, escalators, forAllCells, right, special, toPoint, walls)
+import Types (C2SCommand(..), Cell, Dir(..), DirMap(..), DragState, Escalator(..), GameState, Inputs(..), MapPoint(..), Maze(..), MouseInputs, PlayerColor, PlayerPositions, RealMouseInputs, S2CCommand(..), ScreenPoint(..), SpecialTile(..), borders, cells, down, escalators, forAllCells, right, special, toPoint, walls, serverGameState)
 import Web.Socket.WebSocket as WS
 import Web.UIEvent.WheelEvent (deltaX, deltaY)
 
@@ -91,8 +91,8 @@ isEscalator :: Array Escalator -> MapPoint -> MapPoint -> Boolean
 isEscalator escalators mp1 mp2 = Set.member (Set.fromFoldable [ mp1, mp2 ]) $
   Set.map (\(Escalator a b) -> Set.fromFoldable [ a, b ]) (Set.fromFoldable escalators)
 
-evalClientCommand :: C2SCommand -> GameState -> GameState
-evalClientCommand (CPlayerMove pCol _ targetPos) gs = maybe gs identity $ do
+isValidMove :: PlayerColor -> MapPoint -> GameState -> Boolean
+isValidMove pCol targetPos gs = maybe false (const true) $ do
   currentPos <- Map.lookup pCol gs.players
   targetCell <- Map.lookup targetPos (gs.maze^.cells)
   guard (targetCell^.special /= (Just STUnwalkable)) (pure unit)
@@ -104,14 +104,13 @@ evalClientCommand (CPlayerMove pCol _ targetPos) gs = maybe gs identity $ do
       guard (not $ blockedByWall gs.maze currentPos targetPos dir) (pure unit)
       guard (not $ blockedByPlayer gs.maze gs.players currentPos targetPos dir) (pure unit)
       pure $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
-evalClientCommand (CExplore mp dir) gs = gs
 
--- FIXME implement
 evalServerCommand :: S2CCommand -> GameState -> GameState
+evalServerCommand (SPlayerMove pCol targetPos) gs = gs { players = Map.update (const $ Just targetPos) pCol gs.players }
 evalServerCommand (SExplore nextTile mp dir) gs =
   maybe gs (gs { maze = _, tiles = fromMaybe [] (deleteAt nextTile gs.tiles) })
     ((gs.tiles !! nextTile) >>= (\newTile -> mergeTiles gs.maze newTile mp dir))
-evalServerCommand _ gs = gs
+evalServerCommand (SSetState sgs) gs = gs # serverGameState .~ sgs
 
 -- TODO evalBBox in descending order of player y coordinate
 maybeStartDrag :: RealMouseInputs -> PlayerPositions -> Maybe DragState
@@ -125,7 +124,7 @@ maybeStartDrag i players =
      (First Nothing)
      players
 
-dropPlayer :: PlayerPositions -> RealMouseInputs -> DragState -> Maybe C2SCommand
+dropPlayer :: PlayerPositions -> RealMouseInputs -> DragState -> Maybe MapPoint
 dropPlayer players i { playerColor, dragPoint } = do
   let targetPos = screenToMap i.offscreenDims
                 (ScreenPoint $ i.realMousePos - dragPoint + GFX.playerCenterT)
@@ -133,7 +132,7 @@ dropPlayer players i { playerColor, dragPoint } = do
   if curPos == targetPos then
     Nothing
    else
-    Just $ CPlayerMove playerColor curPos targetPos
+    Just targetPos
 
 data DragCommand =
     StartDrag
@@ -149,6 +148,7 @@ gameLogicState mouseInputs = do
   drag <- handleDrag realMouseI
   pure $ unwrap $ First drag <> First explore
 
+-- FIXME only send CExplore command, if it is a legal explore
 handleExplore :: RealMouseInputs -> State GameState (Maybe C2SCommand)
 handleExplore mouseInputs =
   if mouseInputs.mousePressed then do
@@ -166,7 +166,6 @@ handleExplore mouseInputs =
                           else
                             mempty
                        _ -> mempty)
-    maybe (pure unit) (\command -> put (evalClientCommand command gameState)) mCommand
     pure mCommand
   else
     pure Nothing
@@ -183,15 +182,20 @@ handleDrag mouseInputs = do
         Just StartDrag -> do
           put (gameState { dragging = maybeStartDrag mouseInputs gameState.players })
           pure Nothing
+        -- TODO cleanup following code
         Just (EndDrag dragState) -> do
-          let mCommand = dropPlayer gameState.players mouseInputs dragState
+          let mTargetPos = dropPlayer gameState.players mouseInputs dragState
           maybe
             (put (gameState { dragging = Nothing }) *> pure Nothing)
-            (\command ->
-                put (evalClientCommand command gameState {
-                      dragging = Nothing
-                    }) *> pure (Just command))
-            mCommand
+            (\(Tuple targetPos curPos) ->
+                if isValidMove dragState.playerColor targetPos gameState then
+                  put (gameState {
+                    players = Map.update (const $ Just targetPos) dragState.playerColor gameState.players,
+                    dragging = Nothing
+                  }) *> pure (Just $ CPlayerMove dragState.playerColor curPos targetPos)
+                else
+                  put (gameState { dragging = Nothing }) *> pure Nothing)
+            (Tuple <$> mTargetPos <*> Map.lookup dragState.playerColor gameState.players)
 
 clipRenderOffset :: DimensionPair -> DirMap Int -> Point -> Point
 clipRenderOffset offscreenDims (DirMap { up, down, left, right }) { x: curX, y: curY } =
@@ -225,14 +229,12 @@ gameLogic rerenderChan inputs gameState = do
           cy = gameState.renderOffset.y
           wx = fromMaybe 0.0 (deltaX <$> arrowKeys.mouseWheel)
           wy = fromMaybe 0.0 (deltaY <$> arrowKeys.mouseWheel)
-          -- FIXME prevent scrolling too far away from the existing maze.
       pure $ gameState { renderOffset = clipRenderOffset arrowKeys.offscreenDims (gameState.maze^.borders)
                 { x: cx + mul * (xLeft + xRight) + wx, y: cy + mul * (yUp + yDown) + wy } }
     ServerMsg mMsg -> do
       -- TODO error logging
       let (decodedMsg :: F S2CCommand) =
             genericDecodeJSON defaultOptions =<< (maybe (fail (ForeignError "nothing")) pure mMsg)
-      -- log (show decodedMsg)
       either (\e -> log (foldMap renderForeignError e) *> pure gameState)
         (\cmd ->
             let newState = evalServerCommand cmd gameState

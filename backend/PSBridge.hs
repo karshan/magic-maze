@@ -6,4 +6,5 @@ purescriptOptions = defaultOptions {
     sumEncoding = ObjectWithSingleField
   , allNullaryToStringTag = False
   , tagSingleConstructors = True
+  , fieldLabelModifier = drop 1
   }

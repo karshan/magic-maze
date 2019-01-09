@@ -36,3 +36,4 @@ executables:
     - wai-websockets
     - warp
     - websockets
+    - MonadRandom

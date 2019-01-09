@@ -36,11 +36,15 @@ data Dir =
   | W
       deriving (Eq, Ord, Show)
 
-data MapPoint = MapPoint { x :: Int, y :: Int } deriving (Eq, Ord, Show)
+data MapPoint = MapPoint { _x :: Int, _y :: Int } deriving (Eq, Ord, Show)
+
+instance Num MapPoint where
+    (MapPoint x1 y1) + (MapPoint x2 y2) = MapPoint (x1 + x2) (y1 + y2)
+    (MapPoint x1 y1) - (MapPoint x2 y2) = MapPoint (x1 - x2) (y1 - y2)
 instance FromJSONKey MapPoint
 instance ToJSONKey MapPoint
 
-data DirMap v = DirMap { left :: v, up :: v, right :: v, down :: v } deriving (Eq, Ord, Show)
+data DirMap v = DirMap { _left :: v, _up :: v, _right :: v, _down :: v } deriving (Eq, Ord, Show)
 
 data SpecialTile =
     STUnwalkable
@@ -54,15 +58,15 @@ data SpecialTile =
 
 type Cells = Map MapPoint Cell
 data Escalator = Escalator MapPoint MapPoint deriving (Eq, Ord, Show)
-data Maze = Maze { cells :: Cells, borders :: DirMap Int, escalators :: Set Escalator } deriving (Eq, Ord, Show)
-data Entrance = Entrance { side :: Dir, offset :: Int } deriving (Eq, Ord, Show)
-data Tile = Tile { cells :: Cells, entrance :: Entrance, escalators :: Set Escalator } deriving (Eq, Ord, Show)
-data Walls = Walls { right :: Bool, down :: Bool } deriving (Eq, Ord, Show)
-data Cell = Cell { walls :: Walls, special :: Maybe SpecialTile } deriving (Eq, Ord, Show)
+data Maze = Maze { _cells :: Cells, _borders :: DirMap Int, _escalators :: Set Escalator } deriving (Eq, Ord, Show)
+data Entrance = Entrance { _side :: Dir, _offset :: Int } deriving (Eq, Ord, Show)
+data Tile = Tile { _cells :: Cells, _entrance :: Entrance, _escalators :: Set Escalator } deriving (Eq, Ord, Show)
+data Walls = Walls { _right :: Bool, _down :: Bool } deriving (Eq, Ord, Show)
+data Cell = Cell { _walls :: Walls, _special :: Maybe SpecialTile } deriving (Eq, Ord, Show)
 
 -- TODO nonempty map like dirmap
 type PlayerPositions = Map PlayerColor MapPoint
-data ServerGameState = ServerGameState { maze :: Maze, tiles :: [Tile], players :: PlayerPositions } deriving (Eq, Ord, Show)
+data ServerGameState = ServerGameState { _maze :: Maze, _tiles :: [Tile], _players :: PlayerPositions } deriving (Eq, Ord, Show)
 
 $(deriveJSON purescriptOptions ''Dir)
 $(deriveJSON purescriptOptions ''MapPoint)
