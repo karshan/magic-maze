@@ -36,7 +36,8 @@ import Unsafe.Coerce (unsafeCoerce) -- TODO move to purescript-canvas
 import Web.DOM.Document (createElement)
 import Web.HTML (window)
 import Web.HTML.HTMLDocument (toDocument)
-import Web.HTML.Window (document)
+import Web.HTML.Window (document, location)
+import Web.HTML.Location (host, pathname, protocol)
 
 translate' :: Point -> Drawing -> Drawing
 translate' { x, y } = translate x y
@@ -130,7 +131,10 @@ main = onDOMContentLoaded do
     mPos <- mousePos
     mPressed <- mouseButtonPressed MouseLeftButton
     log "creating websocket"
-    { ws, serverMsg } <- WS.create "ws://localhost:3105/" -- "wss://tmp.karshan.me/ws/"
+    path <- pathname =<< location =<< window
+    host <- host =<< location =<< window
+    protocol <- protocol =<< location =<< window
+    { ws, serverMsg } <- WS.create $ (if protocol == "https:" then "wss://" else "ws://") <> host <> path
     mouseWheel <- Wheel.create
     maybe
         (log "error no canvas")
