@@ -155,24 +155,24 @@ main = onDOMContentLoaded do
             renderedMaze <- mapEffect (renderMaze offscreenCtx)
             -- TODO show loading screen, wait for all assets to load then render
             assets <- loadAssets $ Map.fromFoldable [
-                        Tuple (APlayer Red) "svg/player-red.svg",
-                        Tuple (APlayer Yellow) "svg/player-yellow.svg",
-                        Tuple (APlayer Green) "svg/player-green.svg",
-                        Tuple (APlayer Purple) "svg/player-purple.svg",
-                        Tuple (AExplore Red) "svg/explore-red.svg",
-                        Tuple (AExplore Yellow) "svg/explore-yellow.svg",
-                        Tuple (AExplore Green) "svg/explore-green.svg",
-                        Tuple (AExplore Purple) "svg/explore-purple.svg",
-                        Tuple (AWarp Red) "svg/warp-red.svg",
-                        Tuple (AWarp Yellow) "svg/warp-yellow.svg",
-                        Tuple (AWarp Green) "svg/warp-green.svg",
-                        Tuple (AWarp Purple) "svg/warp-purple.svg",
-                        Tuple (AWeapon Red) "svg/weapon-red.svg",
-                        Tuple (AWeapon Yellow) "svg/weapon-yellow.svg",
-                        Tuple (AWeapon Green) "svg/weapon-green.svg",
-                        Tuple (AWeapon Purple) "svg/weapon-purple.svg",
-                        Tuple (AExit Purple) "svg/exit-purple.svg",
-                        Tuple ABackground "svg/background.svg"
+                        Tuple (APlayer Red) "/svg/player-red.svg",
+                        Tuple (APlayer Yellow) "/svg/player-yellow.svg",
+                        Tuple (APlayer Green) "/svg/player-green.svg",
+                        Tuple (APlayer Purple) "/svg/player-purple.svg",
+                        Tuple (AExplore Red) "/svg/explore-red.svg",
+                        Tuple (AExplore Yellow) "/svg/explore-yellow.svg",
+                        Tuple (AExplore Green) "/svg/explore-green.svg",
+                        Tuple (AExplore Purple) "/svg/explore-purple.svg",
+                        Tuple (AWarp Red) "/svg/warp-red.svg",
+                        Tuple (AWarp Yellow) "/svg/warp-yellow.svg",
+                        Tuple (AWarp Green) "/svg/warp-green.svg",
+                        Tuple (AWarp Purple) "/svg/warp-purple.svg",
+                        Tuple (AWeapon Red) "/svg/weapon-red.svg",
+                        Tuple (AWeapon Yellow) "/svg/weapon-yellow.svg",
+                        Tuple (AWeapon Green) "/svg/weapon-green.svg",
+                        Tuple (AWeapon Purple) "/svg/weapon-purple.svg",
+                        Tuple (AExit Purple) "/svg/exit-purple.svg",
+                        Tuple ABackground "/svg/background.svg"
                       ]
             -- TODO rerenderChan should only change when the maze changes, right now it changes on every server command received
             let renderedMazeSignal = renderedMaze $ { maze: _, offscreenDims: _, assets: _ } <$> subscribe rerenderChan <*> offscreenDims <*> assets
