@@ -61,7 +61,7 @@ cell' assets (Just (STWarp col)) le re = cell' assets Nothing le re <>
 cell' assets (Just (STExit col dir)) le re = cell' assets Nothing le re <>
   drawCellExit dir (maybe mempty image $ lookup (AExit col) assets)
 cell' assets (Just (STTimer active)) le re = cell' assets Nothing le re <>
-  (outlined (outlineColor if active then (rgba 255 0 0 1.0) else (rgba 120 120 120 1.0)) (rectangle (-5.0) 20.0 10.0 10.0))
+  (translate (-tileHalfWidth + 54.0) 10.0 (maybe mempty image $ lookup (if active then AHourglassRed else AHourglassBlack) assets))
 cell' _ _ le re = cell (rgb 0xE6 0xF1 0xF8) (rgb 0xC0 0xDB 0xEC) le re
 
 cellWeapon :: Assets -> Maybe SpecialTile -> Drawing

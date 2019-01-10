@@ -172,6 +172,8 @@ main = onDOMContentLoaded do
                         Tuple (AWeapon Green) "/svg/weapon-green.svg",
                         Tuple (AWeapon Purple) "/svg/weapon-purple.svg",
                         Tuple (AExit Purple) "/svg/exit-purple.svg",
+                        Tuple AHourglassRed "/svg/hourglass-red.svg",
+                        Tuple AHourglassBlack "/svg/hourglass-black.svg",
                         Tuple ABackground "/svg/background.svg"
                       ]
             -- TODO rerenderChan should only change when the maze changes, right now it changes on every server command received

@@ -29,6 +29,8 @@ data AssetName =
   | AWarp PlayerColor
   | AExit PlayerColor
   | AWeapon PlayerColor
+  | AHourglassRed
+  | AHourglassBlack
   | ABackground
 type Asset = Tuple AssetName (Maybe CanvasImageSource)
 type Assets = Map AssetName CanvasImageSource
