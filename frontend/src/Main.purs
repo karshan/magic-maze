@@ -2,7 +2,7 @@ module Main where
 
 import Color (rgba, white)
 import DOM (onDOMContentLoaded)
-import Data.Foldable (foldMap, length)
+import Data.Foldable (foldl, foldMap, length)
 import Data.FoldableWithIndex (foldWithIndexM, foldMapWithIndex)
 import Data.Int (floor, toNumber)
 import Data.Lens ((^.))
@@ -141,10 +141,17 @@ main = onDOMContentLoaded do
         (\canvas -> do
             let mouseMove = { offscreenDims: _, mousePos: _, mousePressed: _, ws: _ } <$>
                            offscreenDims <*> mPos <*> mPressed <*> ws
-            let arrowKeys = { offscreenDims: _, up: _, right: _, down: _, left: _, mouseWheel: _ } <$>
-                            offscreenDims <*> upKey <*> rightKey <*> downKey <*> leftKey <*> mouseWheel
-            let inputs = merge (Keyboard <$> arrowKeys) $
-                  merge (Mouse <$> sampleOn mPressed mouseMove) $ merge (ServerMsg <$> serverMsg) (const Tick <$> every 1000.0)
+            let arrowKeys = { offscreenDims: _, up: _, right: _, down: _, left: _ } <$>
+                            offscreenDims <*> upKey <*> rightKey <*> downKey <*> leftKey
+            let mouseWheelInputs = { offscreenDims: _, mWheelEvent: _ } <$> offscreenDims <*> mouseWheel
+            let inputs =
+                  foldl merge
+                    (Keyboard <$> arrowKeys) [ 
+                      MouseWheel <$> mouseWheelInputs,
+                      Mouse <$> sampleOn mPressed mouseMove,
+                      ServerMsg <$> serverMsg,
+                      const Tick <$> every 1000.0
+                    ]
             rerenderChan <- channel initialState.maze
             game <- foldEffect (gameLogic rerenderChan) initialState inputs
             let realMousePos = map2 (\g m -> g.renderOffset + toPoint m) game mPos

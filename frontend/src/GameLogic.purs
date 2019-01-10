@@ -12,7 +12,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe (..), fromMaybe, isNothing, maybe)
 import Data.Maybe.First (First (..))
 import Data.Monoid (guard)
-import Data.Newtype (unwrap)
+import Data.Newtype (class Newtype, unwrap)
 import Data.Set as Set
 import Data.Tuple (Tuple (..))
 import Effect (Effect)
@@ -23,6 +23,7 @@ import GFX as GFX
 import GFX.Cell (evalExploreBBox)
 import Graphics.Drawing (Point)
 import Isometric (evalBBox, mapToScreen, screenToMap)
+import Math (floor)
 import Prelude
 import Signal.Channel (Channel)
 import Signal.Channel (send) as Chan
@@ -31,7 +32,6 @@ import Tiles (mergeTiles)
 import Types (C2SCommand(..), Cell, Dir(..), DirMap(..), DragState, Escalator(..), GameState, GameStatus(..), Inputs(..), MapPoint(..), Maze(..), MouseInputs, PlayerColor, PlayerPositions, RealMouseInputs, S2CCommand(..), ScreenPoint(..), SpecialTile(..), borders, cells, down, escalators, forAllCells, right, special, toPoint, walls, serverGameState)
 import Web.Socket.WebSocket as WS
 import Web.UIEvent.WheelEvent (deltaX, deltaY)
-import Data.Newtype
 
 initialState :: GameState
 initialState = {
@@ -276,17 +276,22 @@ gameLogic rerenderChan inputs gameState = if gameState.status == Lost || gameSta
             pure { ws: ws, m: genericEncodeJSON defaultOptions m })
       pure nextGameState
     Keyboard arrowKeys -> do
-      let mul = 5.0
+      let mul = 50.0
           xLeft = if arrowKeys.left then (-1.0) else 0.0
           xRight = if arrowKeys.right then 1.0 else 0.0
           yUp = if arrowKeys.up then (-1.0) else 0.0
           yDown = if arrowKeys.down then 1.0 else 0.0
           cx = gameState.renderOffset.x
           cy = gameState.renderOffset.y
-          wx = fromMaybe 0.0 (deltaX <$> arrowKeys.mouseWheel)
-          wy = fromMaybe 0.0 (deltaY <$> arrowKeys.mouseWheel)
       pure $ gameState { renderOffset = clipRenderOffset arrowKeys.offscreenDims (gameState.maze^.borders)
-                { x: cx + mul * (xLeft + xRight) + wx, y: cy + mul * (yUp + yDown) + wy } }
+                { x: cx + mul * (xLeft + xRight), y: cy + mul * (yUp + yDown) } }
+    MouseWheel { offscreenDims, mWheelEvent } -> do
+      let cx = gameState.renderOffset.x
+          cy = gameState.renderOffset.y
+          wx = fromMaybe 0.0 (deltaX <$> mWheelEvent)
+          wy = fromMaybe 0.0 (deltaY <$> mWheelEvent)
+      pure $ gameState { renderOffset = clipRenderOffset offscreenDims (gameState.maze^.borders)
+                { x: floor $ cx + wx, y: floor $ cy + wy } }
     ServerMsg mMsg -> do
       -- TODO error logging
       let (decodedMsg :: F S2CCommand) =
