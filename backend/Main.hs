@@ -92,16 +92,20 @@ main = do
                 forever $ do
                     (a :: Text) <- receiveData conn
                     let eCommand = (eitherDecode (toS a) :: Either String C2SCommand)
-                    either print
-                        (\command -> do
-                            print command
-                            mCommandToSend <- modifyMVar roomStateMV
-                                (\roomState -> do
-                                    (newGameState, mCommandToSend) <-
-                                            evalRandIO (evalCommand command (roomState ^. gameState))
-                                    return (roomState & gameState .~ newGameState, mCommandToSend))
-                            maybe (return ()) (broadcast roomStateMV . toS . encode) mCommandToSend)
-                        eCommand
+                    print eCommand
+                    gameOver <- view (gameState.L.gameOver) <$> readMVar roomStateMV
+                    if gameOver then
+                        return ()
+                    else
+                        either (const $ return ())
+                            (\command -> do
+                                mCommandToSend <- modifyMVar roomStateMV
+                                    (\roomState -> do
+                                        (newGameState, mCommandToSend) <-
+                                                evalRandIO (evalCommand command (roomState ^. gameState))
+                                        return (roomState & gameState .~ newGameState, mCommandToSend))
+                                maybe (return ()) (broadcast roomStateMV . toS . encode) mCommandToSend)
+                            eCommand
         redir req = if "." `T.isInfixOf` T.concat (pathInfo req) then req else req { pathInfo = [ "index.html" ] }
         backupApp :: Application
         backupApp request f =
