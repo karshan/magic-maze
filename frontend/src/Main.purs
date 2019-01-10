@@ -2,7 +2,7 @@ module Main where
 
 import Color (rgba, white)
 import DOM (onDOMContentLoaded)
-import Data.Foldable (foldMap)
+import Data.Foldable (foldMap, length)
 import Data.FoldableWithIndex (foldWithIndexM, foldMapWithIndex)
 import Data.Int (floor, toNumber)
 import Data.Lens ((^.))
@@ -79,7 +79,7 @@ renderText x y c s = D.text (D.font D.monospace 12 mempty) x y (D.fillColor c) s
 
 render :: Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Assets -> Point -> GameState -> Effect Unit
 render ctx offscreenCanvas offscreenDims screenDims assets realMouse gameState = do
-  let debugText = renderText 100.0 100.0 white (show $ { timer: gameState.timer, gameOver: gameState.gameOver })
+  let debugText = renderText 100.0 100.0 white (show $ { timer: gameState.timer, status: gameState.status, numTilesLeft: (length gameState.tiles :: Int) })
   -- TODO draw dragging player first, then in descending order by y coordinate
   let players =
         (foldMapWithIndex

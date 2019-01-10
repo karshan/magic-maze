@@ -64,14 +64,21 @@ data Tile = Tile { _cells :: Cells, _entrance :: Entrance, _escalators :: Set Es
 data Walls = Walls { _right :: Bool, _down :: Bool } deriving (Eq, Ord, Show)
 data Cell = Cell { _walls :: Walls, _special :: Maybe SpecialTile } deriving (Eq, Ord, Show)
 
+data GameStatus =
+    Started
+  | WeaponsAcquired
+  | Won
+  | Lost
+      deriving (Eq, Ord, Show)
+
 -- TODO nonempty map like dirmap
 type PlayerPositions = Map PlayerColor MapPoint
 data ServerGameState = ServerGameState {
     _maze :: Maze
   , _tiles :: [Tile]
   , _players :: PlayerPositions
-  , _timer :: Int 
-  , _gameOver :: Bool 
+  , _timer :: Int
+  , _status :: GameStatus
   } deriving (Eq, Ord, Show)
 
 $(deriveJSON purescriptOptions ''Dir)
@@ -87,4 +94,5 @@ $(deriveJSON purescriptOptions ''Escalator)
 $(deriveJSON purescriptOptions ''Maze)
 $(deriveJSON purescriptOptions ''Entrance)
 $(deriveJSON purescriptOptions ''Tile)
+$(deriveJSON purescriptOptions ''GameStatus)
 $(deriveJSON purescriptOptions ''ServerGameState)

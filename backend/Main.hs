@@ -60,7 +60,7 @@ tickThread roomStateMV = forever $ do
     modifyMVar_ roomStateMV
         (\roomState ->
             if roomState ^. gameState.L.timer <= 1 then
-                return $ roomState & gameState.L.timer .~ 0 & gameState.L.gameOver .~ True
+                return $ roomState & gameState.L.timer .~ 0 & gameState.L.status .~ Lost
             else
                 return $ roomState & gameState.L.timer %~ (\x -> x - 1))
 
@@ -93,8 +93,8 @@ main = do
                     (a :: Text) <- receiveData conn
                     let eCommand = (eitherDecode (toS a) :: Either String C2SCommand)
                     print eCommand
-                    gameOver <- view (gameState.L.gameOver) <$> readMVar roomStateMV
-                    if gameOver then
+                    status <- view (gameState.L.status) <$> readMVar roomStateMV
+                    if status == Lost || status == Won then
                         return ()
                     else
                         either (const $ return ())

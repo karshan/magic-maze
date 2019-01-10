@@ -61,6 +61,13 @@ type Cells = Map MapPoint Cell
 newtype Maze = Maze { cells :: Cells, borders :: DirMap Int, escalators :: Array Escalator }
 newtype Tile = Tile { cells :: Cells, entrance :: Entrance, escalators :: Array Escalator }
 
+data GameStatus =
+    Started
+  | WeaponsAcquired
+  | Won
+  | Lost
+
+-- TODO nonempty map like dirmap
 -- TODO nonempty map for playerpositions (like dirmap)
 type PlayerPositions = Map PlayerColor MapPoint
 type DragState = { playerColor :: PlayerColor, dragPoint :: Point }
@@ -71,7 +78,7 @@ type GameState = {
   dragging :: Maybe DragState,
   renderOffset :: Point,
   timer :: Int,
-  gameOver :: Boolean
+  status :: GameStatus
   }
 
 -- CLEANUP GameState = { sgs :: ServerGameState } get rid of the duplication. Similar cleanup for Tile and Maze ?
@@ -80,7 +87,7 @@ newtype ServerGameState = ServerGameState {
   tiles :: Array Tile,
   players :: PlayerPositions,
   timer :: Int,
-  gameOver :: Boolean
+  status :: GameStatus
   }
 
 type RealMouseInputs =
@@ -135,9 +142,9 @@ toScreenPoint { x, y } = ScreenPoint { x: toNumber x, y: toNumber y }
 serverGameState :: Lens' GameState ServerGameState
 serverGameState = lens toSGS setFromSGS
   where
-    toSGS gs = ServerGameState { maze: gs.maze, tiles: gs.tiles, players: gs.players, timer: gs.timer, gameOver: gs.gameOver }
+    toSGS gs = ServerGameState { maze: gs.maze, tiles: gs.tiles, players: gs.players, timer: gs.timer, status: gs.status }
     setFromSGS gs (ServerGameState sgs) =
-      gs { maze = sgs.maze, players = sgs.players, tiles = sgs.tiles, timer = sgs.timer, gameOver = sgs.gameOver }
+      gs { maze = sgs.maze, players = sgs.players, tiles = sgs.tiles, timer = sgs.timer, status = sgs.status }
 
 left :: forall v. Lens' (DirMap v) v
 left = lens (_.left <<< unwrap) $ \s b -> wrap $ _ { left = b } $ unwrap s
@@ -254,6 +261,15 @@ instance showPlayerColor :: Show PlayerColor where show = genericShow
 instance encodePlayerColor :: Encode PlayerColor where
   encode = genericEncode defaultOptions
 instance decodePlayerColor :: Decode PlayerColor where
+  decode = genericDecode defaultOptions
+
+derive instance eqGameStatus :: Eq GameStatus
+derive instance genericGameStatus :: Generic GameStatus _
+instance showGameStatus :: Show GameStatus where
+  show = genericShow
+instance encodeGameStatus :: Encode GameStatus where
+  encode = genericEncode defaultOptions
+instance decodeGameStatus :: Decode GameStatus where
   decode = genericDecode defaultOptions
 
 derive instance genericServerGameState :: Generic ServerGameState _

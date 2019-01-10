@@ -4,7 +4,8 @@ import Control.Monad.Except (runExcept)
 import Control.Monad.State (State, get, put, runState)
 import Data.Array ((..), (!!), deleteAt)
 import Data.Either (either, note)
-import Data.Foldable (any, foldMap, null)
+import Data.FunctorWithIndex (mapWithIndex)
+import Data.Foldable (any, fold, foldMap, length, null)
 import Data.FoldableWithIndex (foldlWithIndex)
 import Data.Lens ((^.), (.~), (%~))
 import Data.Map as Map
@@ -27,9 +28,10 @@ import Signal.Channel (Channel)
 import Signal.Channel (send) as Chan
 import Signal.DOM (DimensionPair)
 import Tiles (mergeTiles)
-import Types (C2SCommand(..), Cell, Dir(..), DirMap(..), DragState, Escalator(..), GameState, Inputs(..), MapPoint(..), Maze(..), MouseInputs, PlayerColor, PlayerPositions, RealMouseInputs, S2CCommand(..), ScreenPoint(..), SpecialTile(..), borders, cells, down, escalators, forAllCells, right, special, toPoint, walls, serverGameState)
+import Types (C2SCommand(..), Cell, Dir(..), DirMap(..), DragState, Escalator(..), GameState, GameStatus(..), Inputs(..), MapPoint(..), Maze(..), MouseInputs, PlayerColor, PlayerPositions, RealMouseInputs, S2CCommand(..), ScreenPoint(..), SpecialTile(..), borders, cells, down, escalators, forAllCells, right, special, toPoint, walls, serverGameState)
 import Web.Socket.WebSocket as WS
 import Web.UIEvent.WheelEvent (deltaX, deltaY)
+import Data.Newtype
 
 initialState :: GameState
 initialState = {
@@ -39,7 +41,7 @@ initialState = {
       dragging: Nothing,
       renderOffset: { x: 1715.0, y: 840.0 }, -- TODO calculate from offscreenDims
       timer: 150,
-      gameOver: false
+      status: Started
     }
 
 moveMapPoint :: MapPoint -> Dir -> MapPoint
@@ -99,7 +101,8 @@ isValidMove pCol targetPos gs = maybe false (const true) $ do
   targetCell <- Map.lookup targetPos (gs.maze^.cells)
   guard (targetCell^.special /= (Just STUnwalkable)) (pure unit)
   guard (not $ any (_ == targetPos) gs.players) (pure unit)
-  if isEscalator (gs.maze^.escalators) currentPos targetPos || targetCell^.special == Just (STWarp pCol) then
+  if isEscalator (gs.maze^.escalators) currentPos targetPos || 
+    (targetCell^.special == Just (STWarp pCol) && gs.status /= WeaponsAcquired) then
     pure $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
     else do
       dir <- getDirection currentPos targetPos
@@ -114,6 +117,22 @@ evalServerCommand (SExplore nextTile mp dir) gs =
     ((gs.tiles !! nextTile) >>= (\newTile -> mergeTiles gs.maze newTile mp dir))
 evalServerCommand (SSetState sgs) gs = gs # serverGameState .~ sgs
 
+newtype All = All Boolean
+derive instance newtypeAll :: Newtype All _
+instance semigroupAll :: Semigroup All where
+  append (All a) (All b) = All $ a && b
+instance monoidAll :: Monoid All where
+  mempty = All true
+
+weaponsAcquired :: GameState -> Boolean
+weaponsAcquired gs =
+    unwrap $ fold $ mapWithIndex 
+        (\pCol mp -> 
+            maybe (All false) 
+                (\cell -> All $ cell ^. special == Just (STWeapon pCol)) 
+                (Map.lookup mp $ gs.maze ^. cells))
+        (gs.players)
+
 evalClientCommand :: C2SCommand -> GameState -> GameState
 evalClientCommand (CPlayerMove pCol _ targetPos) gs =
   if isValidMove pCol targetPos gs then
@@ -122,12 +141,25 @@ evalClientCommand (CPlayerMove pCol _ targetPos) gs =
       maybe
         newGs
         (\c ->
-          if c ^. special == Just (STTimer true) then
-            newGs { maze = newGs.maze # cells %~ (Map.update (Just <<< (special .~ (Just $ STTimer false))) targetPos),
-                    timer = 150 - gs.timer
-                  }
-          else
-            newGs)
+            case c ^. special of
+               Just (STTimer true) ->
+                  newGs { maze = newGs.maze # cells %~ (Map.update (Just <<< (special .~ (Just $ STTimer false))) targetPos),
+                          timer = 150 - gs.timer
+                        }
+               Just (STWeapon _) ->
+                  if weaponsAcquired newGs then
+                    newGs { status = WeaponsAcquired }
+                  else
+                    newGs
+               Just (STExit _ _) ->
+                  if newGs.status == WeaponsAcquired then
+                      if length newGs.players <= 1 then
+                        newGs { status = Won, players = Map.empty }
+                      else
+                        newGs { players = Map.delete pCol newGs.players }
+                  else
+                      newGs
+               _ -> newGs)
         (Map.lookup targetPos (newGs.maze ^. cells))
   else
     gs
@@ -232,7 +264,7 @@ clipRenderOffset offscreenDims (DirMap { up, down, left, right }) { x: curX, y: 
    in { x: clip curX (sLeft - 500.0) (sRight - 100.0), y: clip curY (sUp - 500.0) (sDown - 100.0) }
 
 gameLogic :: Channel Maze -> Inputs -> GameState -> Effect GameState
-gameLogic rerenderChan inputs gameState = if gameState.gameOver then pure gameState else do
+gameLogic rerenderChan inputs gameState = if gameState.status == Lost || gameState.status == Won then pure gameState else do
   case inputs of
     Mouse mouseInputs -> do
       let (Tuple msgToSend nextGameState) = runState (gameLogicState mouseInputs) gameState
@@ -266,6 +298,6 @@ gameLogic rerenderChan inputs gameState = if gameState.gameOver then pure gameSt
         (runExcept decodedMsg)
     Tick ->
       if gameState.timer <= 1 then
-        pure $ gameState { timer = 0, gameOver = true }
+        pure $ gameState { timer = 0, status = Lost }
       else
         pure $ gameState { timer = gameState.timer - 1 }
