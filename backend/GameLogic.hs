@@ -15,10 +15,20 @@ import qualified Lenses as L
 -- FIXME check from value
 evalCommand :: (RandomGen g) => C2SCommand -> ServerGameState -> Rand g (ServerGameState, Maybe S2CCommand)
 evalCommand (CPlayerMove pCol from to) sgs =
-    if isValidMove pCol to sgs then
+    if isValidMove pCol to sgs then do
         let serverCommand = SPlayerMove pCol to
-            newGameState = sgs & over L.players (Map.update (const $ Just to) pCol)
-        in return (newGameState, Just serverCommand)
+            newGameState = sgs & over L.players (Map.adjust (const to) pCol)
+        maybe
+            (return (newGameState, Just serverCommand))
+            (\cell ->
+                if cell ^. L.special == Just (STTimer True) then
+                    return (newGameState &
+                        L.maze.L.cells %~ 
+                            (Map.adjust (L.special .~ (Just $ STTimer False)) to) &
+                        L.timer %~ (150 -), Just serverCommand)
+                else
+                    return (newGameState, Just serverCommand))
+            (Map.lookup to (newGameState ^. L.maze.L.cells))
     else
         return (sgs, SPlayerMove pCol <$> (Map.lookup pCol (sgs ^. L.players)))
 evalCommand (CExplore mp dir) sgs = do

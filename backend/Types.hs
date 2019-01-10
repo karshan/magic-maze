@@ -10,7 +10,7 @@ import PSBridge
 import Protolude
 
 data C2SCommand =
-    CPlayerMove PlayerColor MapPoint MapPoint
+    CPlayerMove PlayerColor MapPoint MapPoint -- From To
   | CExplore MapPoint Dir
       deriving (Eq, Ord, Show)
 
@@ -53,7 +53,7 @@ data SpecialTile =
   | STWarp PlayerColor
   | STExit PlayerColor Dir
   | STWeapon PlayerColor
-  | STTimer
+  | STTimer Bool -- isActive
       deriving (Eq, Ord, Show)
 
 type Cells = Map MapPoint Cell
@@ -66,7 +66,13 @@ data Cell = Cell { _walls :: Walls, _special :: Maybe SpecialTile } deriving (Eq
 
 -- TODO nonempty map like dirmap
 type PlayerPositions = Map PlayerColor MapPoint
-data ServerGameState = ServerGameState { _maze :: Maze, _tiles :: [Tile], _players :: PlayerPositions, _timer :: Int } deriving (Eq, Ord, Show)
+data ServerGameState = ServerGameState {
+    _maze :: Maze
+  , _tiles :: [Tile]
+  , _players :: PlayerPositions
+  , _timer :: Int 
+  , _gameOver :: Bool 
+  } deriving (Eq, Ord, Show)
 
 $(deriveJSON purescriptOptions ''Dir)
 $(deriveJSON purescriptOptions ''MapPoint)

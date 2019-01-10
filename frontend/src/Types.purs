@@ -47,7 +47,7 @@ data SpecialTile =
   | STWarp PlayerColor
   | STExit PlayerColor Dir
   | STWeapon PlayerColor
-  | STTimer
+  | STTimer Boolean -- isActive
 
 data Escalator = Escalator MapPoint MapPoint
 newtype Entrance = Entrance { side :: Dir, offset :: Int }
@@ -68,9 +68,18 @@ type GameState = {
   players :: PlayerPositions,
   dragging :: Maybe DragState,
   renderOffset :: Point,
-  timer :: Int
+  timer :: Int,
+  gameOver :: Boolean
   }
-newtype ServerGameState = ServerGameState { maze :: Maze, tiles :: Array Tile, players :: PlayerPositions, timer :: Int }
+
+-- CLEANUP GameState = { sgs :: ServerGameState } get rid of the duplication. Similar cleanup for Tile and Maze ?
+newtype ServerGameState = ServerGameState { 
+  maze :: Maze,
+  tiles :: Array Tile,
+  players :: PlayerPositions,
+  timer :: Int,
+  gameOver :: Boolean
+  }
 
 type RealMouseInputs =
   { offscreenDims :: DimensionPair, realMousePos :: Point, mousePressed :: Boolean, ws :: Maybe (WebSocket) }
@@ -86,7 +95,7 @@ data Inputs =
   | Tick
 
 data C2SCommand =
-    CPlayerMove PlayerColor MapPoint MapPoint
+    CPlayerMove PlayerColor MapPoint MapPoint  -- From To
   | CExplore MapPoint Dir
 
 data S2CCommand =
@@ -124,8 +133,9 @@ toScreenPoint { x, y } = ScreenPoint { x: toNumber x, y: toNumber y }
 serverGameState :: Lens' GameState ServerGameState
 serverGameState = lens toSGS setFromSGS
   where
-    toSGS gs = ServerGameState { maze: gs.maze, tiles: gs.tiles, players: gs.players, timer: gs.timer }
-    setFromSGS gs (ServerGameState sgs) = gs { maze = sgs.maze, players = sgs.players, tiles = sgs.tiles, timer = sgs.timer }
+    toSGS gs = ServerGameState { maze: gs.maze, tiles: gs.tiles, players: gs.players, timer: gs.timer, gameOver: gs.gameOver }
+    setFromSGS gs (ServerGameState sgs) =
+      gs { maze = sgs.maze, players = sgs.players, tiles = sgs.tiles, timer = sgs.timer, gameOver = sgs.gameOver }
 
 left :: forall v. Lens' (DirMap v) v
 left = lens (_.left <<< unwrap) $ \s b -> wrap $ _ { left = b } $ unwrap s

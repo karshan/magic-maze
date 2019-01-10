@@ -13,13 +13,14 @@ import           Control.Monad.Random
 import           Data.Aeson
 import           Data.Map                       (Map)
 import qualified Data.Map                       as Map
+import qualified Data.Text                      as T
 import           Network.HTTP.Types
 import           Network.Wai
 import           Network.Wai.Application.Static
 import           Network.Wai.Handler.Warp
 import           Network.Wai.Handler.WebSockets
+import           Network.WebSockets             (requestPath)
 import           Network.WebSockets.Connection
-import           Network.WebSockets (requestPath)
 import           Prelude                        (String)
 import           Protolude
 import           System.Environment             (getArgs)
@@ -27,8 +28,8 @@ import           System.Random                  (randomIO)
 
 import           GameData
 import           GameLogic
+import qualified Lenses                         as L
 import           Types
-import qualified Data.Text as T
 
 type ServerState = Map Text (MVar RoomState)
 data RoomState = RoomState {
@@ -53,12 +54,22 @@ broadcast mv msg = do
     putText $ "broadcasting " <> msg
     mapM_ (flip sendTextData msg) . view connections =<< readMVar mv
 
+tickThread :: MVar RoomState -> IO ()
+tickThread roomStateMV = forever $ do
+    threadDelay 1000000
+    modifyMVar_ roomStateMV
+        (\roomState ->
+            if roomState ^. gameState.L.timer <= 1 then
+                return $ roomState & gameState.L.timer .~ 0 & gameState.L.gameOver .~ True
+            else
+                return $ roomState & gameState.L.timer %~ (\x -> x - 1))
+
+-- FIXME keepAlive ping, and SetState when client comes to life after being dead
 main :: IO ()
 main = do
     Just port <- (readMaybe <=< head) <$> getArgs
     serverStateMV <- newMVar Map.empty
     run port (websocketsOr defaultConnectionOptions (wsApp serverStateMV) backupApp)
-    -- FIXME thread that decrements gameState.timer everysecond after the game starts
     where
         wsApp :: MVar ServerState -> PendingConnection -> IO ()
         wsApp serverStateMV pendingConn = do
@@ -68,6 +79,7 @@ main = do
                     maybe
                         (do
                             newRoomStateMV <- newMVar (RoomState Map.empty initialState)
+                            void $ forkIO (tickThread newRoomStateMV)
                             return (Map.insert path newRoomStateMV serverState, newRoomStateMV))
                         (\existingRoomStateMV -> return (serverState, existingRoomStateMV))
                         (Map.lookup path serverState))

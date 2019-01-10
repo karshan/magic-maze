@@ -17,7 +17,8 @@ initialState = ServerGameState {
         (Green, (MapPoint 1 2)),
         (Purple, (MapPoint 2 2))
       ],
-      _timer = 150
+      _timer = 150,
+      _gameOver = False
     }
 
 initialTile :: Maze
@@ -44,7 +45,7 @@ initialTile =
         ((MapPoint { _x = 0, _y = 3 }), Cell { _walls = downWall, _special = Just (STWarp Purple) }),
         ((MapPoint { _x = 1, _y = 3 }), Cell { _walls = noWalls, _special = Just (STExplore Red S) }),
         ((MapPoint { _x = 2, _y = 3 }), Cell { _walls = downWall, _special = Nothing }),
-        ((MapPoint { _x = 3, _y = 3 }), Cell { _walls = rdWall, _special = Just STTimer })
+        ((MapPoint { _x = 3, _y = 3 }), Cell { _walls = rdWall, _special = Just (STTimer True) })
       ],
       _escalators = Set.fromList [ Escalator (mp 0 1) (mp 1 0) ],
       _borders = DirMap {
@@ -81,7 +82,7 @@ tiles =
         mk 2 1 rightWall Nothing,
         mk 3 1 rdWall unwalk,
         mk 0 2 rightWall unwalk,
-        mk 1 2 downWall (Just STTimer),
+        mk 1 2 downWall (Just (STTimer True)),
         mk 2 2 noWalls Nothing,
         mk 3 2 downWall (Just STEntrance),
         mk 0 3 downWall unwalk,
@@ -101,7 +102,7 @@ tiles =
         mk 1 1 noWalls Nothing,
         mk 2 1 downWall Nothing,
         mk 3 1 rdWall (warp Green),
-        mk 0 2 downWall (Just STTimer),
+        mk 0 2 downWall (Just (STTimer True)),
         mk 1 2 downWall Nothing,
         mk 2 2 noWalls Nothing,
         mk 3 2 downWall (exp Yellow E),
@@ -224,7 +225,7 @@ tiles =
         mk 2 0 rightWall (exp Green N),
         mk 3 0 rdWall unwalk,
         mk 0 1 rdWall (exp Red W),
-        mk 1 1 downWall (Just STTimer),
+        mk 1 1 downWall (Just (STTimer True)),
         mk 2 1 noWalls Nothing,
         mk 3 1 rightWall Nothing,
         mk 0 2 noWalls Nothing,

@@ -79,7 +79,7 @@ renderText x y c s = D.text (D.font D.monospace 12 mempty) x y (D.fillColor c) s
 
 render :: Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Assets -> Point -> GameState -> Effect Unit
 render ctx offscreenCanvas offscreenDims screenDims assets realMouse gameState = do
-  let debugText = renderText 100.0 100.0 white (show gameState.timer)
+  let debugText = renderText 100.0 100.0 white (show $ { timer: gameState.timer, gameOver: gameState.gameOver })
   -- TODO draw dragging player first, then in descending order by y coordinate
   let players =
         (foldMapWithIndex

@@ -6,7 +6,7 @@ import Data.Array ((..), (!!), deleteAt)
 import Data.Either (either, note)
 import Data.Foldable (any, foldMap, null)
 import Data.FoldableWithIndex (foldlWithIndex)
-import Data.Lens ((^.), (.~))
+import Data.Lens ((^.), (.~), (%~))
 import Data.Map as Map
 import Data.Maybe (Maybe (..), fromMaybe, isNothing, maybe)
 import Data.Maybe.First (First (..))
@@ -38,7 +38,8 @@ initialState = {
       players: Map.empty,
       dragging: Nothing,
       renderOffset: { x: 1715.0, y: 840.0 }, -- TODO calculate from offscreenDims
-      timer: 150
+      timer: 150,
+      gameOver: false
     }
 
 moveMapPoint :: MapPoint -> Dir -> MapPoint
@@ -113,6 +114,26 @@ evalServerCommand (SExplore nextTile mp dir) gs =
     ((gs.tiles !! nextTile) >>= (\newTile -> mergeTiles gs.maze newTile mp dir))
 evalServerCommand (SSetState sgs) gs = gs # serverGameState .~ sgs
 
+evalClientCommand :: C2SCommand -> GameState -> GameState
+evalClientCommand (CPlayerMove pCol _ targetPos) gs =
+  if isValidMove pCol targetPos gs then
+    let newGs = gs { players = Map.update (Just <<< const targetPos) pCol gs.players }
+    in
+      maybe
+        newGs
+        (\c ->
+          if c ^. special == Just (STTimer true) then
+            newGs { maze = newGs.maze # cells %~ (Map.update (Just <<< (special .~ (Just $ STTimer false))) targetPos),
+                    timer = 150 - gs.timer
+                  }
+          else
+            newGs)
+        (Map.lookup targetPos (newGs.maze ^. cells))
+  else
+    gs
+evalClientCommand (CExplore _ _) gs = gs
+      
+
 -- TODO evalBBox in descending order of player y coordinate
 maybeStartDrag :: RealMouseInputs -> PlayerPositions -> Maybe DragState
 maybeStartDrag i players =
@@ -171,6 +192,7 @@ handleExplore mouseInputs =
   else
     pure Nothing
 
+-- CLEANUP handleDrag+evalClientCommand
 handleDrag :: RealMouseInputs -> State GameState (Maybe C2SCommand)
 handleDrag mouseInputs = do
   gameState <- get
@@ -190,10 +212,11 @@ handleDrag mouseInputs = do
             (put (gameState { dragging = Nothing }) *> pure Nothing)
             (\(Tuple targetPos curPos) ->
                 if isValidMove dragState.playerColor targetPos gameState then
-                  put (gameState {
-                    players = Map.update (const $ Just targetPos) dragState.playerColor gameState.players,
-                    dragging = Nothing
-                  }) *> pure (Just $ CPlayerMove dragState.playerColor curPos targetPos)
+                  let clientCommand = CPlayerMove dragState.playerColor curPos targetPos
+                  in
+                    put ((evalClientCommand clientCommand gameState) {
+                      dragging = Nothing
+                    }) *> pure (Just clientCommand)
                 else
                   put (gameState { dragging = Nothing }) *> pure Nothing)
             (Tuple <$> mTargetPos <*> Map.lookup dragState.playerColor gameState.players)
@@ -209,7 +232,7 @@ clipRenderOffset offscreenDims (DirMap { up, down, left, right }) { x: curX, y: 
    in { x: clip curX (sLeft - 500.0) (sRight - 100.0), y: clip curY (sUp - 500.0) (sDown - 100.0) }
 
 gameLogic :: Channel Maze -> Inputs -> GameState -> Effect GameState
-gameLogic rerenderChan inputs gameState = do
+gameLogic rerenderChan inputs gameState = if gameState.gameOver then pure gameState else do
   case inputs of
     Mouse mouseInputs -> do
       let (Tuple msgToSend nextGameState) = runState (gameLogicState mouseInputs) gameState
@@ -242,4 +265,7 @@ gameLogic rerenderChan inputs gameState = do
             in Chan.send rerenderChan newState.maze *> pure newState)
         (runExcept decodedMsg)
     Tick ->
-      pure $ gameState { timer = gameState.timer - 1 }
+      if gameState.timer <= 1 then
+        pure $ gameState { timer = 0, gameOver = true }
+      else
+        pure $ gameState { timer = gameState.timer - 1 }
