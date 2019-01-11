@@ -78,7 +78,8 @@ type GameState = {
   dragging :: Maybe DragState,
   renderOffset :: Point,
   timer :: Int,
-  status :: GameStatus
+  status :: GameStatus,
+  allowedDir :: Dir
   }
 
 -- CLEANUP GameState = { sgs :: ServerGameState } get rid of the duplication. Similar cleanup for Tile and Maze ?
@@ -113,6 +114,7 @@ data S2CCommand =
     SPlayerMove PlayerColor MapPoint
   | SExplore Int MapPoint Dir
   | SSetState ServerGameState
+  | SSetAllowedDir Dir
 
 data PlayerColor =
     Red

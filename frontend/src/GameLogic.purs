@@ -1,30 +1,31 @@
 module GameLogic where
 
+import Prelude
+
 import Control.Monad.Except (runExcept)
 import Control.Monad.State (State, get, put, runState)
 import Data.Array ((..), (!!), deleteAt)
 import Data.Either (either, note)
-import Data.FunctorWithIndex (mapWithIndex)
 import Data.Foldable (any, fold, foldMap, length, null)
 import Data.FoldableWithIndex (foldlWithIndex)
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.Lens ((^.), (.~), (%~))
 import Data.Map as Map
-import Data.Maybe (Maybe (..), fromMaybe, isNothing, maybe)
-import Data.Maybe.First (First (..))
+import Data.Maybe (Maybe(..), fromMaybe, isNothing, maybe)
+import Data.Maybe.First (First(..))
 import Data.Monoid (guard)
 import Data.Newtype (class Newtype, unwrap)
 import Data.Set as Set
-import Data.Tuple (Tuple (..))
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Console (log)
-import Foreign (F, ForeignError (..), fail, renderForeignError)
+import Foreign (F, ForeignError(..), fail, renderForeignError)
 import Foreign.Generic (defaultOptions, genericDecodeJSON, genericEncodeJSON)
 import GFX as GFX
 import GFX.Cell (evalExploreBBox)
 import Graphics.Drawing (Point)
 import Isometric (evalBBox, mapToScreen, screenToMap)
 import Math (floor)
-import Prelude
 import Signal.Channel (Channel)
 import Signal.Channel (send) as Chan
 import Signal.DOM (DimensionPair)
@@ -41,7 +42,8 @@ initialState = {
       dragging: Nothing,
       renderOffset: { x: 1715.0, y: 840.0 }, -- TODO calculate from offscreenDims
       timer: 150,
-      status: Started
+      status: Started,
+      allowedDir: N
     }
 
 moveMapPoint :: MapPoint -> Dir -> MapPoint
@@ -106,16 +108,19 @@ isValidMove pCol targetPos gs = maybe false (const true) $ do
     pure $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
     else do
       dir <- getDirection currentPos targetPos
+      guard (dir == gs.allowedDir) (pure unit)
       guard (not $ blockedByWall gs.maze currentPos targetPos dir) (pure unit)
       guard (not $ blockedByPlayer gs.maze gs.players currentPos targetPos dir) (pure unit)
       pure $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
 
 evalServerCommand :: S2CCommand -> GameState -> GameState
-evalServerCommand (SPlayerMove pCol targetPos) gs = gs { players = Map.update (const $ Just targetPos) pCol gs.players }
+evalServerCommand (SPlayerMove pCol targetPos) gs = 
+  evalArriveAtSpecialCell pCol targetPos $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
 evalServerCommand (SExplore nextTile mp dir) gs =
   maybe gs (gs { maze = _, tiles = fromMaybe [] (deleteAt nextTile gs.tiles) })
     ((gs.tiles !! nextTile) >>= (\newTile -> mergeTiles gs.maze newTile mp dir))
 evalServerCommand (SSetState sgs) gs = gs # serverGameState .~ sgs
+evalServerCommand (SSetAllowedDir dir) gs = gs { allowedDir = dir }
 
 newtype All = All Boolean
 derive instance newtypeAll :: Newtype All _
@@ -133,34 +138,37 @@ weaponsAcquired gs =
                 (Map.lookup mp $ gs.maze ^. cells))
         (gs.players)
 
+evalArriveAtSpecialCell :: PlayerColor -> MapPoint -> GameState -> GameState
+evalArriveAtSpecialCell pCol targetPos gs =
+  maybe
+    gs
+    (\c ->
+        case c ^. special of
+           Just (STTimer true) ->
+              gs { maze = gs.maze # cells %~ (Map.update (Just <<< (special .~ (Just $ STTimer false))) targetPos),
+                      timer = 150 - gs.timer
+                    }
+           Just (STWeapon _) ->
+              if weaponsAcquired gs then
+                gs { status = WeaponsAcquired }
+              else
+                gs
+           Just (STExit _ _) ->
+              if gs.status == WeaponsAcquired then
+                  if length gs.players <= 1 then
+                    gs { status = Won, players = Map.empty }
+                  else
+                    gs { players = Map.delete pCol gs.players }
+              else
+                  gs
+           _ -> gs)
+    (Map.lookup pCol gs.players *> Map.lookup targetPos (gs.maze ^. cells))
+--   ^ ensure that player hasn't already exited
+
 evalClientCommand :: C2SCommand -> GameState -> GameState
 evalClientCommand (CPlayerMove pCol _ targetPos) gs =
   if isValidMove pCol targetPos gs then
-    let newGs = gs { players = Map.update (Just <<< const targetPos) pCol gs.players }
-    in
-      maybe
-        newGs
-        (\c ->
-            case c ^. special of
-               Just (STTimer true) ->
-                  newGs { maze = newGs.maze # cells %~ (Map.update (Just <<< (special .~ (Just $ STTimer false))) targetPos),
-                          timer = 150 - gs.timer
-                        }
-               Just (STWeapon _) ->
-                  if weaponsAcquired newGs then
-                    newGs { status = WeaponsAcquired }
-                  else
-                    newGs
-               Just (STExit _ _) ->
-                  if newGs.status == WeaponsAcquired then
-                      if length newGs.players <= 1 then
-                        newGs { status = Won, players = Map.empty }
-                      else
-                        newGs { players = Map.delete pCol newGs.players }
-                  else
-                      newGs
-               _ -> newGs)
-        (Map.lookup targetPos (newGs.maze ^. cells))
+    evalArriveAtSpecialCell pCol targetPos $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
   else
     gs
 evalClientCommand (CExplore _ _) gs = gs
@@ -264,7 +272,7 @@ clipRenderOffset offscreenDims (DirMap { up, down, left, right }) { x: curX, y: 
    in { x: clip curX (sLeft - 500.0) (sRight - 100.0), y: clip curY (sUp - 500.0) (sDown - 100.0) }
 
 gameLogic :: Channel Maze -> Inputs -> GameState -> Effect GameState
-gameLogic rerenderChan inputs gameState = if gameState.status == Lost || gameState.status == Won then pure gameState else do
+gameLogic rerenderChan inputs gameState = if gameState.status == Lost || gameState.status == Won then pure (gameState { dragging = Nothing }) else do
   case inputs of
     Mouse mouseInputs -> do
       let (Tuple msgToSend nextGameState) = runState (gameLogicState mouseInputs) gameState

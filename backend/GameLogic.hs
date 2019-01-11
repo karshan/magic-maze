@@ -23,9 +23,9 @@ weaponsAcquired gs =
 
 -- FIXME send revert commands on invalid commands
 -- FIXME check from value
-evalCommand :: (RandomGen g) => C2SCommand -> ServerGameState -> Rand g (ServerGameState, Maybe S2CCommand)
-evalCommand (CPlayerMove pCol from to) sgs =
-    if isValidMove pCol to sgs then do
+evalCommand :: (RandomGen g) => C2SCommand -> Dir -> ServerGameState -> Rand g (ServerGameState, Maybe S2CCommand)
+evalCommand (CPlayerMove pCol from to) allowedDir sgs =
+    if isValidMove pCol to allowedDir sgs then do
         let serverCommand = SPlayerMove pCol to
             newGameState = sgs & over L.players (Map.adjust (const to) pCol)
         maybe
@@ -55,7 +55,7 @@ evalCommand (CPlayerMove pCol from to) sgs =
             (Map.lookup to (newGameState ^. L.maze.L.cells))
     else
         return (sgs, SPlayerMove pCol <$> (Map.lookup pCol (sgs ^. L.players)))
-evalCommand (CExplore mp dir) sgs = do
+evalCommand (CExplore mp dir) allowedDir sgs = do
     nextTile <- getRandomR (0, (length $ sgs ^. L.tiles) - 1)
     let serverCommand = SExplore nextTile mp dir
     maybe (return (sgs, Nothing))
@@ -121,8 +121,8 @@ grd :: Monoid m => Bool -> m -> m
 grd True a = a
 grd False _ = mempty
 
-isValidMove :: PlayerColor -> MapPoint -> ServerGameState -> Bool
-isValidMove pCol targetPos gs = maybe False (const True) $ do
+isValidMove :: PlayerColor -> MapPoint -> Dir -> ServerGameState -> Bool
+isValidMove pCol targetPos allowedDir gs = maybe False (const True) $ do
   currentPos <- Map.lookup pCol (gs^.L.players)
   targetCell <- Map.lookup targetPos (gs^.L.maze^.L.cells)
   grd (targetCell^.L.special /= (Just STUnwalkable)) (pure ())
@@ -132,6 +132,7 @@ isValidMove pCol targetPos gs = maybe False (const True) $ do
     pure $ (gs & over L.players (Map.update (const $ Just targetPos) pCol))
     else do
       dir <- getDirection currentPos targetPos
+      grd (dir == allowedDir) (pure ())
       grd (not $ blockedByWall (gs^.L.maze) currentPos targetPos dir) (pure ())
       grd (not $ blockedByPlayer (gs^.L.maze) (gs^.L.players) currentPos targetPos dir) (pure ())
       pure $ (gs & over L.players (Map.update (const $ Just targetPos) pCol))
