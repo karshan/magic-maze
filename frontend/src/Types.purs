@@ -99,9 +99,9 @@ type RealMouseInputs =
 type MouseInputs =
   { offscreenDims :: DimensionPair, mousePos :: CoordinatePair, mousePressed :: Boolean, ws :: Maybe (WebSocket) }
 type KeyboardInputs =
-  { offscreenDims :: DimensionPair, up :: Boolean, down :: Boolean, left :: Boolean, right :: Boolean }
+  { screenDims :: { w :: Number, h :: Number }, offscreenDims :: DimensionPair, up :: Boolean, down :: Boolean, left :: Boolean, right :: Boolean }
 type MouseWheelInputs =
-  { offscreenDims :: DimensionPair, mWheelEvent :: (Maybe WheelEvent) }
+  { screenDims :: { w :: Number, h :: Number }, offscreenDims :: DimensionPair, mWheelEvent :: (Maybe WheelEvent) }
 data Inputs =
     Mouse MouseInputs
   | Keyboard KeyboardInputs

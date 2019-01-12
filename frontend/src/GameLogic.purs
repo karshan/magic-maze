@@ -16,7 +16,7 @@ import Data.Maybe.First (First(..))
 import Data.Monoid (guard)
 import Data.Newtype (class Newtype, unwrap)
 import Data.Set as Set
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst)
 import Effect (Effect)
 import Effect.Console (log)
 import Foreign (F, ForeignError(..), fail, renderForeignError)
@@ -116,7 +116,7 @@ isValidMove pCol targetPos gs = maybe false (const true) $ do
 
 evalServerCommand :: S2CCommand -> GameState -> GameState
 evalServerCommand (SPlayerMove pCol targetPos) gs = 
-  evalArriveAtSpecialCell pCol targetPos $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
+  fst $ evalArriveAtSpecialCell pCol targetPos $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
 evalServerCommand (SExplore nextTile mp dir) gs =
   maybe gs (gs { maze = _, tiles = fromMaybe [] (deleteAt nextTile gs.tiles) })
     ((gs.tiles !! nextTile) >>= (\newTile -> mergeTiles gs.maze newTile mp dir))
@@ -140,40 +140,40 @@ weaponsAcquired gs =
                 (Map.lookup mp $ gs.maze ^. cells))
         (gs.players)
 
-evalArriveAtSpecialCell :: PlayerColor -> MapPoint -> GameState -> GameState
+evalArriveAtSpecialCell :: PlayerColor -> MapPoint -> GameState -> Tuple GameState Boolean -- shouldReRender
 evalArriveAtSpecialCell pCol targetPos gs =
   maybe
-    gs
+    (Tuple gs false)
     (\c ->
         case c ^. special of
            Just (STTimer true) ->
-              gs { maze = gs.maze # cells %~ (Map.update (Just <<< (special .~ (Just $ STTimer false))) targetPos),
+              Tuple (gs { maze = gs.maze # cells %~ (Map.update (Just <<< (special .~ (Just $ STTimer false))) targetPos),
                       timer = 150 - gs.timer
-                    }
+                    }) true
            Just (STWeapon _) ->
               if weaponsAcquired gs then
-                gs { status = WeaponsAcquired }
+                Tuple (gs { status = WeaponsAcquired }) false
               else
-                gs
+                Tuple gs false
            Just (STExit _ _) ->
               if gs.status == WeaponsAcquired then
                   if length gs.players <= 1 then
-                    gs { status = Won, players = Map.empty }
+                    Tuple (gs { status = Won, players = gs.players }) false
                   else
-                    gs { players = Map.delete pCol gs.players }
+                    Tuple (gs { players = Map.delete pCol gs.players }) false
               else
-                  gs
-           _ -> gs)
+                  Tuple gs false
+           _ -> Tuple gs false)
     (Map.lookup pCol gs.players *> Map.lookup targetPos (gs.maze ^. cells))
 --   ^ ensure that player hasn't already exited
 
-evalClientCommand :: C2SCommand -> GameState -> GameState
+evalClientCommand :: C2SCommand -> GameState -> Tuple GameState Boolean -- shouldReRender
 evalClientCommand (CPlayerMove pCol _ targetPos) gs =
   if isValidMove pCol targetPos gs then
     evalArriveAtSpecialCell pCol targetPos $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
   else
-    gs
-evalClientCommand (CExplore _ _) gs = gs
+    Tuple gs false
+evalClientCommand (CExplore _ _) gs = Tuple gs false
       
 
 -- TODO evalBBox in descending order of player y coordinate
@@ -204,13 +204,13 @@ data DragCommand =
 
 -- TODO explore and drag can occur on the same mouse press
 -- only one should occur on one mousepress
-gameLogicState :: MouseInputs -> State GameState (Maybe C2SCommand)
+gameLogicState :: MouseInputs -> State GameState (Tuple (Maybe C2SCommand) Boolean) --shouldeReRender
 gameLogicState mouseInputs = do
   renderOffset <- _.renderOffset <$> get
   let realMouseI = { offscreenDims: mouseInputs.offscreenDims, ws: mouseInputs.ws, mousePressed: mouseInputs.mousePressed, realMousePos: toPoint mouseInputs.mousePos + renderOffset }
   explore <- handleExplore realMouseI
-  drag <- handleDrag realMouseI
-  pure $ unwrap $ First drag <> First explore
+  (Tuple drag shouldReRender) <- handleDrag realMouseI
+  pure $ Tuple (unwrap $ First drag <> First explore) shouldReRender
 
 -- FIXME only send CExplore command, if it is a legal explore
 handleExplore :: RealMouseInputs -> State GameState (Maybe C2SCommand)
@@ -235,7 +235,7 @@ handleExplore mouseInputs =
     pure Nothing
 
 -- CLEANUP handleDrag+evalClientCommand
-handleDrag :: RealMouseInputs -> State GameState (Maybe C2SCommand)
+handleDrag :: RealMouseInputs -> State GameState (Tuple (Maybe C2SCommand) Boolean) -- shouldReRender
 handleDrag mouseInputs = do
   gameState <- get
   let dragCommand = unwrap $ (do
@@ -243,42 +243,43 @@ handleDrag mouseInputs = do
         guard (not mouseInputs.mousePressed) (pure (EndDrag dragState))) <>
         guard (isNothing gameState.dragging && mouseInputs.mousePressed) (pure StartDrag)
   case dragCommand of
-        Nothing -> pure Nothing
+        Nothing -> pure (Tuple Nothing false)
         Just StartDrag -> do
           put (gameState { dragging = maybeStartDrag mouseInputs gameState.players })
-          pure Nothing
+          pure (Tuple Nothing false)
         -- TODO cleanup following code
         Just (EndDrag dragState) -> do
           let mTargetPos = dropPlayer gameState.players mouseInputs dragState
           maybe
-            (put (gameState { dragging = Nothing }) *> pure Nothing)
+            (put (gameState { dragging = Nothing }) *> pure (Tuple Nothing false))
             (\(Tuple targetPos curPos) ->
                 if isValidMove dragState.playerColor targetPos gameState then
                   let clientCommand = CPlayerMove dragState.playerColor curPos targetPos
+                      (Tuple newGameState shouldReRender) = evalClientCommand clientCommand gameState
                   in
-                    put ((evalClientCommand clientCommand gameState) {
+                    put (newGameState {
                       dragging = Nothing
-                    }) *> pure (Just clientCommand)
+                    }) *> pure (Tuple (Just clientCommand) shouldReRender)
                 else
-                  put (gameState { dragging = Nothing }) *> pure Nothing)
+                  put (gameState { dragging = Nothing }) *> pure (Tuple Nothing false))
             (Tuple <$> mTargetPos <*> Map.lookup dragState.playerColor gameState.players)
 
--- FIXME depend on screenDims
-clipRenderOffset :: DimensionPair -> DirMap Int -> Point -> Point
-clipRenderOffset offscreenDims (DirMap { up, down, left, right }) { x: curX, y: curY } =
+clipRenderOffset :: { w :: Number, h :: Number } -> DimensionPair -> DirMap Int -> Point -> Point
+clipRenderOffset scrDims offscreenDims (DirMap { up, down, left, right }) { x: curX, y: curY } =
   let mp x y = MapPoint { x, y }
       clip a lower upper = if a < lower then lower else if a > upper then upper else a
       sLeft = _.x $ unwrap $ mapToScreen offscreenDims (mp left down)
       sRight = _.x $ unwrap $ mapToScreen offscreenDims (mp right up)
       sUp = _.y $ unwrap $ mapToScreen offscreenDims (mp left up)
       sDown = _.y $ unwrap $ mapToScreen offscreenDims (mp right down)
-   in { x: clip curX (sLeft - 500.0) (sRight - 100.0), y: clip curY (sUp - 500.0) (sDown - 100.0) }
+   in { x: clip curX (sLeft - scrDims.w) (sRight), y: clip curY (sUp - scrDims.h) (sDown) }
 
 gameLogic :: Channel Maze -> Inputs -> GameState -> Effect GameState
 gameLogic rerenderChan inputs gameState = if gameState.status == Lost || gameState.status == Won then pure (gameState { dragging = Nothing }) else do
   case inputs of
     Mouse mouseInputs -> do
-      let (Tuple msgToSend nextGameState) = runState (gameLogicState mouseInputs) gameState
+      let (Tuple (Tuple msgToSend shouldReRender) nextGameState) = runState (gameLogicState mouseInputs) gameState
+      Chan.send rerenderChan nextGameState.maze
       either (maybe (pure unit) log)
         (\{ ws, m } -> WS.sendString ws m)
         (do
@@ -294,15 +295,15 @@ gameLogic rerenderChan inputs gameState = if gameState.status == Lost || gameSta
           yDown = if arrowKeys.down then 1.0 else 0.0
           cx = gameState.renderOffset.x
           cy = gameState.renderOffset.y
-      pure $ gameState { renderOffset = clipRenderOffset arrowKeys.offscreenDims (gameState.maze^.borders)
+      pure $ gameState { renderOffset = clipRenderOffset arrowKeys.screenDims arrowKeys.offscreenDims (gameState.maze^.borders)
                 { x: cx + mul * (xLeft + xRight), y: cy + mul * (yUp + yDown) } }
-    MouseWheel { offscreenDims, mWheelEvent } -> do
+    MouseWheel { screenDims, offscreenDims, mWheelEvent } -> do
       let cx = gameState.renderOffset.x
           cy = gameState.renderOffset.y
           wx = fromMaybe 0.0 (deltaX <$> mWheelEvent)
           wy = fromMaybe 0.0 (deltaY <$> mWheelEvent)
-      pure $ gameState { renderOffset = clipRenderOffset offscreenDims (gameState.maze^.borders)
-                { x: floor $ cx + wx, y: floor $ cy + wy } }
+      pure $ gameState { renderOffset = clipRenderOffset screenDims offscreenDims (gameState.maze^.borders)
+                { x: floor $ cx - wx, y: floor $ cy - wy } }
     ServerMsg mMsg -> do
       -- TODO error logging
       let (decodedMsg :: F S2CCommand) =

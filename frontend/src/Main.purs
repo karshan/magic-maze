@@ -139,6 +139,7 @@ main = onDOMContentLoaded do
     doc <- toDocument <$> (document =<< window)
     offscreenCanvas <- unsafeCoerce <$> createElement "canvas" doc
     screenDims <- windowDimensions
+    let scrDims = map (\{ w, h } -> { w: toNumber w, h: toNumber h }) screenDims
     let offscreenDims = constant $ { w: floor tileHalfWidth * 2 * 4 * 9, h: floor tileHalfHeight * 2 * 4 * 9 }
     mPos <- mousePos
     mPressed <- mouseButtonPressed MouseLeftButton
@@ -152,10 +153,11 @@ main = onDOMContentLoaded do
         (log "error no canvas")
         (\canvas -> do
             let mouseMove = { offscreenDims: _, mousePos: _, mousePressed: _, ws: _ } <$>
-                           offscreenDims <*> mPos <*> mPressed <*> ws
-            let arrowKeys = { offscreenDims: _, up: _, right: _, down: _, left: _ } <$>
-                            offscreenDims <*> upKey <*> rightKey <*> downKey <*> leftKey
-            let mouseWheelInputs = { offscreenDims: _, mWheelEvent: _ } <$> offscreenDims <*> mouseWheel
+                            offscreenDims <*> mPos <*> mPressed <*> ws
+            let arrowKeys = { screenDims: _, offscreenDims: _, up: _, right: _, down: _, left: _ } <$>
+                            scrDims <*> offscreenDims <*> upKey <*> rightKey <*> downKey <*> leftKey
+            let mouseWheelInputs = { screenDims: _, offscreenDims: _, mWheelEvent: _ } <$>
+                            scrDims <*> offscreenDims <*> mouseWheel
             let inputs =
                   foldl merge
                     (Keyboard <$> arrowKeys) [ 
