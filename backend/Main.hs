@@ -26,7 +26,8 @@ import           Network.WebSockets.Connection
 import           Prelude                        (String)
 import           Protolude
 import           System.Environment             (getArgs)
-import           System.Random                  (randomIO)
+import           System.Random                  (randomRIO, randomIO)
+import           WaiAppStatic.Types
 
 import           GameData
 import           GameLogic
@@ -42,10 +43,18 @@ data RoomState = RoomState {
 
 makeFieldsNoPrefix ''RoomState
 
+genName :: IO Text
+genName = do
+    let rand :: [a] -> IO (Maybe a)
+        rand l = (l !!) <$> randomRIO (0, length l - 1)
+        v = [ "a", "e", "i", "o" , "u", "aa", "ee", "oo" ]
+        c = [ "b", "c", "ch", "d", "f", "ph", "g", "h", "gh", "j", "k", "l", "m", "n", "p", "q", "r", "s", "t", "th", "v", "w", "x", "y", "z" ]
+    toS . concat . catMaybes <$> mapM rand [ c, v, c, v, c, v, c ]
+
 -- TODO check if randomName already exists ?
 addClient :: MVar RoomState -> Connection -> IO (Text, Dir)
 addClient mv conn = do
-    name <- toS <$> replicateM 6 (chr . (`mod` 26) <$> randomIO)
+    name <- genName
     dir <- modifyMVar mv 
         (\roomState -> do
             let remainingDirs = Set.fromList [ N, E, S, W ] \\ Set.fromList (Map.elems $ roomState ^. allowedDirs)
@@ -77,6 +86,10 @@ tickThread roomStateMV = forever $ do
             else
                 return $ roomState & gameState.L.timer %~ (\x -> x - 1))
 
+encodeClients :: MVar RoomState -> IO Text
+encodeClients r =
+    (return . toS . encode . SSetClients) =<< (view allowedDirs <$> readMVar r)
+
 -- FIXME keepAlive ping, and SetState when client comes to life after being dead
 -- FIXME kill rooms after game is won/lost
 main :: IO ()
@@ -100,9 +113,13 @@ main = do
             conn <- acceptRequest pendingConn
             (name, allowedDir) <- addClient roomStateMV conn
             sendTextData conn (encode $ SSetAllowedDir allowedDir)
+            broadcast roomStateMV =<< encodeClients roomStateMV
             gameStateAtConn <- view gameState <$> readMVar roomStateMV
             sendTextData conn (encode (SSetState gameStateAtConn))
-            flip finally (removeClient roomStateMV name) $ do
+            flip finally 
+                (do
+                    removeClient roomStateMV name
+                    broadcastExcept name roomStateMV =<< encodeClients roomStateMV) $ do
                 forkPingThread conn 30
                 forever $ do
                     (a :: Text) <- receiveData conn
@@ -130,4 +147,4 @@ main = do
         redir req = if "." `T.isInfixOf` T.concat (pathInfo req) then req else req { pathInfo = [ "index.html" ] }
         backupApp :: Application
         backupApp request f =
-            staticApp (defaultWebAppSettings "static") (redir request) f
+            staticApp ((defaultWebAppSettings "static") { ssMaxAge = MaxAgeSeconds 0 }) (redir request) f

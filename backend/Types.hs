@@ -19,6 +19,7 @@ data S2CCommand =
   | SExplore Int MapPoint Dir
   | SSetState ServerGameState
   | SSetAllowedDir Dir
+  | SSetClients (Map Text Dir)
       deriving (Eq, Ord, Show)
 
 data PlayerColor =

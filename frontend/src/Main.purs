@@ -17,11 +17,12 @@ import Effect (Effect)
 import Effect.Console (log)
 import GFX as GFX
 import GFX.Cell (drawCell, drawCellWall, drawCellWeapon)
+import GFX.UIOverlay (overlay)
+import GFX.Util (renderText)
 import GameLogic (gameLogic, initialState)
 import Graphics.Canvas (CanvasElement, CanvasImageSource, Context2D, getCanvasElementById, getContext2D, setCanvasHeight, setCanvasWidth, tryLoadImage, canvasElementToImageSource)
-import Graphics.Drawing (Color, Drawing, Point, filled, image, outlined, outlineColor, path, rectangle, lineWidth, translate)
-import Graphics.Drawing (fillColor, render, text) as D
-import Graphics.Drawing.Font (font, monospace) as D
+import Graphics.Drawing (Drawing, Point, filled, image, lineWidth, outlineColor, outlined, path, rectangle, translate)
+import Graphics.Drawing (fillColor, render) as D
 import Isometric (mapToScreen, mapToScreenD, tileHalfHeight, tileHalfWidth)
 import Prelude
 import Signal (Signal, sampleOn, runSignal, constant, map2, merge)
@@ -31,7 +32,7 @@ import Signal.Effect (foldEffect, mapEffect)
 import Signal.MouseWheel (create) as Wheel
 import Signal.Time (every)
 import Signal.WebSocket (create) as WS
-import Types (Asset, AssetName(..), Assets, DirMap(..), Escalator(..), GameState, Inputs(..), MapPoint, Maze, PlayerColor(..), cells, down, escalators, forAllCells, left, right, toPoint, up)
+import Types (Asset, AssetName(..), Assets, DirMap(..), Dir(..), Escalator(..), GameState, Inputs(..), MapPoint, Maze, PlayerColor(..), cells, down, escalators, forAllCells, left, right, toPoint, up)
 import Unsafe.Coerce (unsafeCoerce) -- TODO move to purescript-canvas
 import Web.DOM.Document (createElement)
 import Web.HTML (window)
@@ -74,16 +75,15 @@ renderMaze ctx { maze, offscreenDims, assets } = do
   let rescalators = foldMap (\(Escalator mp1 mp2) -> drawEscalator offscreenDims mp1 mp2) (maze^.escalators)
   D.render ctx (rcells <> rwalls <> rescalators <> rweapons)
 
-renderText :: Number -> Number -> Color -> String -> Drawing
-renderText x y c s = D.text (D.font D.monospace 12 mempty) x y (D.fillColor c) s
 
 render :: Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Assets -> Point -> GameState -> Effect Unit
 render ctx offscreenCanvas offscreenDims screenDims assets realMouse gameState = do
-  let debugText = renderText 100.0 100.0 white (show $ { 
+  let debugText = renderText 100.0 100.0 white 12 (show $ { 
         timer: gameState.timer, 
         status: gameState.status, 
         numTilesLeft: (length gameState.tiles :: Int),
-        allowedDir: gameState.allowedDir
+        allowedDir: gameState.allowedDir,
+        clients: gameState.clients
       })
   -- TODO draw dragging player first, then in descending order by y coordinate
   let players =
@@ -99,7 +99,14 @@ render ctx offscreenCanvas offscreenDims screenDims assets realMouse gameState =
         assets)
   let r = gameState.renderOffset
   let bg = maybe mempty image (Map.lookup ABackground assets)
-  D.render ctx (GFX.background screenDims bg <> (translate (-r.x) (-r.y) $ (image $ canvasElementToImageSource offscreenCanvas) <> players) <> debugText)
+  -- TODO move overlay rendering to GFX
+  let scrDims = { w: toNumber screenDims.w, h: toNumber screenDims.h }
+  D.render ctx 
+    (GFX.background screenDims bg <> 
+      (translate (-r.x) (-r.y) (
+        image (canvasElementToImageSource offscreenCanvas) <> 
+        players)) <> 
+      debugText <> overlay scrDims gameState assets)
 
 resize :: CanvasElement -> DimensionPair -> Effect Unit
 resize canvas dims = do
@@ -184,9 +191,14 @@ main = onDOMContentLoaded do
                         Tuple (AWeapon Green) "/svg/weapon-green.svg",
                         Tuple (AWeapon Purple) "/svg/weapon-purple.svg",
                         Tuple (AExit Purple) "/svg/exit-purple.svg",
+                        Tuple (ACard N) "/svg/card-north.svg",
+                        Tuple (ACard E) "/svg/card-east.svg",
+                        Tuple (ACard S) "/svg/card-south.svg",
+                        Tuple (ACard W) "/svg/card-west.svg",
                         Tuple AHourglassRed "/svg/hourglass-red.svg",
                         Tuple AHourglassBlack "/svg/hourglass-black.svg",
-                        Tuple ABackground "/svg/background.svg"
+                        Tuple ABackground "/svg/background.svg",
+                        Tuple AOverlay "/svg/overlay.svg"
                       ]
             -- TODO rerenderChan should only change when the maze changes, right now it changes on every server command received
             let renderedMazeSignal = renderedMaze $ { maze: _, offscreenDims: _, assets: _ } <$> subscribe rerenderChan <*> offscreenDims <*> assets

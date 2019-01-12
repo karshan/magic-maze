@@ -43,7 +43,8 @@ initialState = {
       renderOffset: { x: 1715.0, y: 840.0 }, -- TODO calculate from offscreenDims
       timer: 150,
       status: Started,
-      allowedDir: N
+      allowedDir: N,
+      clients: Map.empty
     }
 
 moveMapPoint :: MapPoint -> Dir -> MapPoint
@@ -121,6 +122,7 @@ evalServerCommand (SExplore nextTile mp dir) gs =
     ((gs.tiles !! nextTile) >>= (\newTile -> mergeTiles gs.maze newTile mp dir))
 evalServerCommand (SSetState sgs) gs = gs # serverGameState .~ sgs
 evalServerCommand (SSetAllowedDir dir) gs = gs { allowedDir = dir }
+evalServerCommand (SSetClients clients) gs = gs { clients = clients }
 
 newtype All = All Boolean
 derive instance newtypeAll :: Newtype All _
@@ -261,6 +263,7 @@ handleDrag mouseInputs = do
                   put (gameState { dragging = Nothing }) *> pure Nothing)
             (Tuple <$> mTargetPos <*> Map.lookup dragState.playerColor gameState.players)
 
+-- FIXME depend on screenDims
 clipRenderOffset :: DimensionPair -> DirMap Int -> Point -> Point
 clipRenderOffset offscreenDims (DirMap { up, down, left, right }) { x: curX, y: curY } =
   let mp x y = MapPoint { x, y }

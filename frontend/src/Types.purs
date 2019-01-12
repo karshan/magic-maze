@@ -32,6 +32,8 @@ data AssetName =
   | AHourglassRed
   | AHourglassBlack
   | ABackground
+  | AOverlay
+  | ACard Dir
 type Asset = Tuple AssetName (Maybe CanvasImageSource)
 type Assets = Map AssetName CanvasImageSource
 
@@ -79,7 +81,8 @@ type GameState = {
   renderOffset :: Point,
   timer :: Int,
   status :: GameStatus,
-  allowedDir :: Dir
+  allowedDir :: Dir,
+  clients :: Map String Dir
   }
 
 -- CLEANUP GameState = { sgs :: ServerGameState } get rid of the duplication. Similar cleanup for Tile and Maze ?
@@ -115,6 +118,7 @@ data S2CCommand =
   | SExplore Int MapPoint Dir
   | SSetState ServerGameState
   | SSetAllowedDir Dir
+  | SSetClients (Map String Dir)
 
 data PlayerColor =
     Red
