@@ -34,6 +34,7 @@ data AssetName =
   | ABackground
   | AOverlay
   | ACard Dir
+  | ANametag
 type Asset = Tuple AssetName (Maybe CanvasImageSource)
 type Assets = Map AssetName CanvasImageSource
 

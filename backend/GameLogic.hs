@@ -55,12 +55,13 @@ evalCommand (CPlayerMove pCol from to) allowedDir sgs =
             (Map.lookup to (newGameState ^. L.maze.L.cells))
     else
         return (sgs, SPlayerMove pCol <$> (Map.lookup pCol (sgs ^. L.players)))
-evalCommand (CExplore mp dir) allowedDir sgs = do
+evalCommand (CExplore mp dir) S sgs = do
     nextTile <- getRandomR (0, (length $ sgs ^. L.tiles) - 1)
     let serverCommand = SExplore nextTile mp dir
     maybe (return (sgs, Nothing))
         (\newMaze -> return (sgs & L.maze .~ newMaze & L.tiles .~ (deleteAt nextTile (sgs^.L.tiles)), Just serverCommand))
         (((sgs ^. L.tiles) !! nextTile) >>= (\newTile -> mergeTiles (sgs^.L.maze) newTile mp dir))
+evalCommand (CExplore mp dir) _ sgs = return (sgs, Nothing)
 
 deleteAt = deleteAtH []
 
@@ -127,8 +128,8 @@ isValidMove pCol targetPos allowedDir gs = maybe False (const True) $ do
   targetCell <- Map.lookup targetPos (gs^.L.maze^.L.cells)
   grd (targetCell^.L.special /= (Just STUnwalkable)) (pure ())
   grd (not $ any (== targetPos) (gs^.L.players)) (pure ())
-  if isEscalator (gs^.L.maze^.L.escalators) currentPos targetPos ||
-    (targetCell^.L.special == Just (STWarp pCol) && gs^.L.status /= WeaponsAcquired) then
+  if (isEscalator (gs^.L.maze^.L.escalators) currentPos targetPos && allowedDir == E) ||
+    (targetCell^.L.special == Just (STWarp pCol) && gs^.L.status /= WeaponsAcquired && allowedDir == W) then
     pure $ (gs & over L.players (Map.update (const $ Just targetPos) pCol))
     else do
       dir <- getDirection currentPos targetPos

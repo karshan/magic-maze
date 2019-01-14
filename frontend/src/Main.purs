@@ -200,7 +200,8 @@ main = onDOMContentLoaded do
                         Tuple AHourglassRed "/svg/hourglass-red.svg",
                         Tuple AHourglassBlack "/svg/hourglass-black.svg",
                         Tuple ABackground "/svg/background.svg",
-                        Tuple AOverlay "/svg/overlay.svg"
+                        Tuple AOverlay "/svg/overlay.svg",
+                        Tuple ANametag "/svg/nametag.svg"
                       ]
             -- TODO rerenderChan should only change when the maze changes, right now it changes on every server command received
             let renderedMazeSignal = renderedMaze $ { maze: _, offscreenDims: _, assets: _ } <$> subscribe rerenderChan <*> offscreenDims <*> assets

@@ -104,8 +104,8 @@ isValidMove pCol targetPos gs = maybe false (const true) $ do
   targetCell <- Map.lookup targetPos (gs.maze^.cells)
   guard (targetCell^.special /= (Just STUnwalkable)) (pure unit)
   guard (not $ any (_ == targetPos) gs.players) (pure unit)
-  if isEscalator (gs.maze^.escalators) currentPos targetPos || 
-    (targetCell^.special == Just (STWarp pCol) && gs.status /= WeaponsAcquired) then
+  if (isEscalator (gs.maze^.escalators) currentPos targetPos && gs.allowedDir == E) || 
+    (targetCell^.special == Just (STWarp pCol) && gs.status /= WeaponsAcquired && gs.allowedDir == W) then
     pure $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
     else do
       dir <- getDirection currentPos targetPos
@@ -206,9 +206,10 @@ data DragCommand =
 -- only one should occur on one mousepress
 gameLogicState :: MouseInputs -> State GameState (Tuple (Maybe C2SCommand) Boolean) --shouldeReRender
 gameLogicState mouseInputs = do
+  gs <- get
   renderOffset <- _.renderOffset <$> get
   let realMouseI = { offscreenDims: mouseInputs.offscreenDims, ws: mouseInputs.ws, mousePressed: mouseInputs.mousePressed, realMousePos: toPoint mouseInputs.mousePos + renderOffset }
-  explore <- handleExplore realMouseI
+  explore <- if gs.allowedDir == S then handleExplore realMouseI else pure Nothing
   (Tuple drag shouldReRender) <- handleDrag realMouseI
   pure $ Tuple (unwrap $ First drag <> First explore) shouldReRender
 
@@ -297,6 +298,8 @@ gameLogic rerenderChan inputs gameState = if gameState.status == Lost || gameSta
           cy = gameState.renderOffset.y
       pure $ gameState { renderOffset = clipRenderOffset arrowKeys.screenDims arrowKeys.offscreenDims (gameState.maze^.borders)
                 { x: cx + mul * (xLeft + xRight), y: cy + mul * (yUp + yDown) } }
+    -- TODO implement middle click scroll
+    -- FIXME don't scroll if control is pressed, allow browser zoom, or implement custom zoom
     MouseWheel { screenDims, offscreenDims, mWheelEvent } -> do
       let cx = gameState.renderOffset.x
           cy = gameState.renderOffset.y
