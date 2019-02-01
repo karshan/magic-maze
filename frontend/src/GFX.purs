@@ -6,6 +6,7 @@ import Color (Color, rgb, rgba)
 import Data.Array ((..))
 import Data.Foldable (foldMap, fold)
 import Data.Maybe (Maybe (..), maybe)
+import Data.Monoid (guard)
 import Data.Map (lookup)
 import Data.Int
 import Types
@@ -51,30 +52,24 @@ drawCellWeapon col =
 drawCellWarp :: Drawing -> Drawing
 drawCellWarp = translate (-tileHalfWidth + 27.0) 0.0
 
-cell' :: Assets -> Maybe SpecialTile -> Boolean -> Boolean -> Drawing
-cell' _ (Just STUnwalkable) le re = cell (rgb 0x10 0x10 0x10) (rgb 0x00 0x00 0x00) le re
-cell' _ (Just STEntrance) le re = cell (rgb 0xFF 0xF1 0xF8) (rgb 0xFF 0xDB 0xEC) le re
-cell' assets (Just (STExplore col dir)) le re = cell' assets Nothing le re <>
+cell :: Assets -> Maybe SpecialTile -> Boolean -> Boolean -> Drawing
+cell _ (Just STUnwalkable) le re = mempty
+cell assets (Just (STExplore col dir)) le re = cell assets Nothing le re <>
   drawCellExplore dir (maybe mempty image $ lookup (AExplore col) assets)
-cell' assets (Just (STWarp col)) le re = cell' assets Nothing le re <>
+cell assets (Just (STWarp col)) le re = cell assets Nothing le re <>
   drawCellWarp (maybe mempty image $ lookup (AWarp col) assets)
-cell' assets (Just (STExit col dir)) le re = cell' assets Nothing le re <>
+cell assets (Just (STExit col dir)) le re = cell assets Nothing le re <>
   drawCellExit dir (maybe mempty image $ lookup (AExit col) assets)
-cell' assets (Just (STTimer active)) le re = cell' assets Nothing le re <>
+cell assets (Just (STTimer active)) le re = cell assets Nothing le re <>
   (translate (-tileHalfWidth + 54.0) 10.0 (maybe mempty image $ lookup (if active then AHourglassRed else AHourglassBlack) assets))
-cell' _ _ le re = cell (rgb 0xE6 0xF1 0xF8) (rgb 0xC0 0xDB 0xEC) le re
-
+cell assets _ le re = translate (-tileHalfWidth) 0.0 $
+    maybe mempty image (lookup ACellTop assets)
+ <> translate 0.0 tileHalfHeight (guard le (maybe mempty image $ lookup ACellBottomLeft assets))
+ <> translate tileHalfWidth tileHalfHeight (guard re (maybe mempty image $ lookup ACellBottomRight assets))
+  
 cellWeapon :: Assets -> Maybe SpecialTile -> Drawing
 cellWeapon assets (Just (STWeapon col)) = drawCellWeapon col (maybe mempty image $ lookup (AWeapon col) assets)
 cellWeapon _ _ = mempty
-
--- All translations are relative to cell NW corner unless specified
-cell :: Color -> Color -> Boolean -> Boolean -> Drawing
-cell bright dark leftEdge rightEdge = translate (-tileHalfWidth) 0.0 $
-    filled (fillColor bright) (svgPath "M0 32L64 0L128 32L64 64L0 32Z")
- <> outlined (outlineColor dark) (svgPath "M0 32L64 0L128 32L64 64L0 32Z")
- <> (if leftEdge then filled (fillColor dark) (svgPath "M0 32L64 64V72L0 40V32Z") else mempty)
- <> (if rightEdge then filled (fillColor dark) (svgPath "M128 32L64 64V72L128 40V32Z") else mempty)
 
 -- FIXME light1 must = base, or wall corners will look weird
 baseColors :: ColorSet

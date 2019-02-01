@@ -189,6 +189,7 @@ addBorderWalls :: Tile -> Tile
 addBorderWalls t =
   let noBorderWall (Just (STExplore _ _)) = True
       noBorderWall (Just STEntrance) = True
+      noBorderWall (Just STUnwalkable) = True
       noBorderWall _ = False
   in t & L.cells .~
         (Map.mapWithKey

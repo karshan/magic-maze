@@ -35,6 +35,9 @@ data AssetName =
   | AOverlay
   | ACard Dir
   | ANametag
+  | ACellTop
+  | ACellBottomRight
+  | ACellBottomLeft
 type Asset = Tuple AssetName (Maybe CanvasImageSource)
 type Assets = Map AssetName CanvasImageSource
 

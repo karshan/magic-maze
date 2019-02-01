@@ -1,26 +1,26 @@
 module GFX.Cell where
 
 import Data.Lens ((^.))
-import Data.Map (lookup, member)
-import Data.Maybe (Maybe, maybe)
+import Data.Map (lookup)
+import Data.Maybe (Maybe(..), maybe)
 import Data.Monoid (guard)
 import GFX as GFX
 import Graphics.Drawing (Drawing, Point)
 import Isometric (evalIsoBBox, mapToScreenD)
 import Prelude
 import Signal.DOM (DimensionPair)
-import Types (Assets, Cell, Cells, Dir, MapPoint (..), ScreenPoint, down, right, special, walls)
+import Types (Assets, Cell, Cells, Dir, MapPoint (..), ScreenPoint, SpecialTile(..), down, right, special, walls)
 
 drawCell :: Assets -> DimensionPair -> Cells -> Int -> Int -> Cell -> Drawing
 drawCell assets dims maze x y cell =
   let mp x_ y_ = MapPoint { x: x_, y: y_ }
   in
     mapToScreenD dims (MapPoint {x, y})
-      (GFX.cell'
+      (GFX.cell
         assets
         (cell^.special)
-        (not $ member (mp x (y + 1)) maze)
-        (not $ member (mp (x + 1) y) maze))
+        (maybe true (\c -> c^.special == Just STUnwalkable) $ lookup (mp x (y + 1)) maze)
+        (maybe true (\c -> c^.special == Just STUnwalkable) $ lookup (mp (x + 1) y) maze))
 
 drawCellWeapon :: Assets -> DimensionPair -> Cells -> Int -> Int -> Cell -> Drawing
 drawCellWeapon assets dims maze x y cell =

@@ -76,19 +76,19 @@ tiles =
         mk 0 0 rightWall (warp Yellow),
         mk 1 0 rdWall unwalk,
         mk 2 0 rightWall (exp Green N),
-        mk 3 0 rightWall unwalk,
+        mk 3 0 noWalls unwalk,
         mk 0 1 downWall (exp Purple W),
         mk 1 1 downWall Nothing,
         mk 2 1 rightWall Nothing,
-        mk 3 1 rdWall unwalk,
+        mk 3 1 downWall unwalk,
         mk 0 2 rightWall unwalk,
         mk 1 2 downWall (Just (STTimer True)),
         mk 2 2 noWalls Nothing,
         mk 3 2 downWall (Just STEntrance),
-        mk 0 3 downWall unwalk,
-        mk 1 3 rdWall unwalk,
+        mk 0 3 noWalls unwalk,
+        mk 1 3 rightWall unwalk,
         mk 2 3 rdWall (warp Red),
-        mk 3 3 rdWall unwalk
+        mk 3 3 noWalls unwalk
       ]
     }, Tile {
       _entrance = Entrance { _side = S, _offset = 1 },
@@ -97,7 +97,7 @@ tiles =
         mk 0 0 noWalls Nothing,
         mk 1 0 rightWall Nothing,
         mk 2 0 rightWall (warp Red),
-        mk 3 0 rdWall unwalk,
+        mk 3 0 downWall unwalk,
         mk 0 1 rdWall (exp Purple W),
         mk 1 1 noWalls Nothing,
         mk 2 1 downWall Nothing,
@@ -106,10 +106,10 @@ tiles =
         mk 1 2 downWall Nothing,
         mk 2 2 noWalls Nothing,
         mk 3 2 downWall (exp Yellow E),
-        mk 0 3 rdWall unwalk,
+        mk 0 3 rightWall unwalk,
         mk 1 3 noWalls (Just STEntrance),
         mk 2 3 rdWall Nothing,
-        mk 3 3 rdWall unwalk
+        mk 3 3 noWalls unwalk
       ]
     }, Tile {
       _entrance = Entrance { _side = W, _offset = 1 },
@@ -118,18 +118,18 @@ tiles =
         mk 0 0 downWall (warp Green),
         mk 1 0 noWalls Nothing,
         mk 2 0 rdWall (exp Red N),
-        mk 3 0 rightWall unwalk,
+        mk 3 0 noWalls unwalk,
         mk 0 1 noWalls (Just STEntrance),
         mk 1 1 rdWall Nothing,
         mk 2 1 noWalls unwalk,
-        mk 3 1 rdWall unwalk,
+        mk 3 1 downWall unwalk,
         mk 0 2 rdWall (warp Purple),
         mk 1 2 noWalls unwalk,
         mk 2 2 rightWall unwalk,
         mk 3 2 rightWall Nothing,
-        mk 0 3 downWall unwalk,
-        mk 1 3 downWall unwalk,
-        mk 2 3 rdWall unwalk,
+        mk 0 3 noWalls unwalk,
+        mk 1 3 noWalls unwalk,
+        mk 2 3 rightWall unwalk,
         mk 3 3 rightWall (Just (STExit Purple S))
       ]
     }, Tile {
@@ -143,7 +143,7 @@ tiles =
         mk 0 1 rightWall Nothing,
         mk 1 1 rightWall (warp Red),
         mk 2 1 downWall unwalk,
-        mk 3 1 rdWall unwalk,
+        mk 3 1 downWall unwalk,
         mk 0 2 rightWall Nothing,
         mk 1 2 rdWall unwalk,
         mk 2 2 noWalls Nothing,
@@ -151,7 +151,7 @@ tiles =
         mk 0 3 downWall Nothing,
         mk 1 3 downWall Nothing,
         mk 2 3 rdWall Nothing,
-        mk 3 3 rdWall unwalk
+        mk 3 3 noWalls unwalk
       ]
     }, Tile {
       _entrance = Entrance { _side = N, _offset = 2 },
@@ -164,7 +164,7 @@ tiles =
         mk 0 1 rightWall (exp Purple W),
         mk 1 1 downWall unwalk,
         mk 2 1 noWalls unwalk,
-        mk 3 1 rdWall unwalk,
+        mk 3 1 downWall unwalk,
         mk 0 2 rightWall Nothing,
         mk 1 2 rightWall (warp Yellow),
         mk 2 2 rdWall unwalk,
@@ -181,7 +181,7 @@ tiles =
         mk 0 0 rightWall (warp Yellow),
         mk 1 0 rightWall unwalk,
         mk 2 0 rdWall (Just STEntrance),
-        mk 3 0 rdWall unwalk,
+        mk 3 0 downWall unwalk,
         mk 0 1 rightWall (exp Purple W),
         mk 1 1 downWall unwalk,
         mk 2 1 rdWall unwalk,
@@ -190,10 +190,10 @@ tiles =
         mk 1 2 noWalls Nothing,
         mk 2 2 downWall Nothing,
         mk 3 2 rdWall Nothing,
-        mk 0 3 rdWall unwalk,
+        mk 0 3 rightWall unwalk,
         mk 1 3 rdWall (warp Green),
-        mk 2 3 downWall unwalk,
-        mk 3 3 rdWall unwalk
+        mk 2 3 noWalls unwalk,
+        mk 3 3 noWalls unwalk
       ]
     }, Tile {
       _entrance = Entrance { _side = W, _offset = 1 },
@@ -202,19 +202,19 @@ tiles =
         mk 0 0 rightWall (warp Purple),
         mk 1 0 rdWall unwalk,
         mk 2 0 rightWall (exp Red N),
-        mk 3 0 rightWall unwalk,
+        mk 3 0 noWalls unwalk,
         mk 0 1 downWall (Just STEntrance),
         mk 1 1 rightWall Nothing,
         mk 2 1 rightWall Nothing,
-        mk 3 1 rdWall unwalk,
+        mk 3 1 downWall unwalk,
         mk 0 2 rightWall unwalk,
         mk 1 2 noWalls Nothing,
         mk 2 2 downWall Nothing,
         mk 3 2 downWall (exp Green E),
         mk 0 3 rightWall unwalk,
         mk 1 3 rdWall (weapon Yellow),
-        mk 2 3 downWall unwalk,
-        mk 3 3 rdWall unwalk
+        mk 2 3 noWalls unwalk,
+        mk 3 3 noWalls unwalk
       ]
     }, Tile {
       _entrance = Entrance { _side = E, _offset = 2 },
@@ -223,7 +223,7 @@ tiles =
         mk 0 0 noWalls Nothing,
         mk 1 0 downWall Nothing,
         mk 2 0 rightWall (exp Green N),
-        mk 3 0 rdWall unwalk,
+        mk 3 0 downWall unwalk,
         mk 0 1 rdWall (exp Red W),
         mk 1 1 downWall (Just (STTimer True)),
         mk 2 1 noWalls Nothing,
@@ -235,7 +235,7 @@ tiles =
         mk 0 3 downWall Nothing,
         mk 1 3 rightWall (exp Yellow S),
         mk 2 3 rdWall (warp Purple),
-        mk 3 3 rdWall unwalk
+        mk 3 3 noWalls unwalk
       ]
     }
   ]
