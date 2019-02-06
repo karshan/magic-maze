@@ -70,6 +70,7 @@ renderMaze :: Context2D -> { maze :: Maze, offscreenDims :: DimensionPair, asset
 renderMaze ctx { maze, offscreenDims, assets } = do
   D.render ctx (filled (D.fillColor (rgba 0 0 0 0.0)) (rectangle 0.0 0.0 (toNumber offscreenDims.w) (toNumber offscreenDims.h)))
   let rcells = forAllCells maze (drawCell assets offscreenDims (maze^.cells))
+  -- FIXME draw border walls on left and top
   let rwalls = forAllCells maze (drawCellWall offscreenDims (maze^.cells))
   let rweapons = forAllCells maze (drawCellWeapon assets offscreenDims (maze^.cells))
   let rescalators = foldMap (\(Escalator mp1 mp2) -> drawEscalator offscreenDims mp1 mp2) (maze^.escalators)

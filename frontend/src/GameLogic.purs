@@ -158,7 +158,7 @@ evalArriveAtSpecialCell pCol targetPos gs =
            Just (STExit _ _) ->
               if gs.status == WeaponsAcquired then
                   if length gs.players <= 1 then
-                    Tuple (gs { status = Won, players = gs.players }) false
+                    Tuple (gs { status = Won, players = gs.players, dragging = Nothing }) false
                   else
                     Tuple (gs { players = Map.delete pCol gs.players }) false
               else
@@ -275,10 +275,13 @@ clipRenderOffset scrDims offscreenDims (DirMap { up, down, left, right }) { x: c
       sDown = _.y $ unwrap $ mapToScreen offscreenDims (mp right down)
    in { x: clip curX (sLeft - scrDims.w) (sRight), y: clip curY (sUp - scrDims.h) (sDown) }
 
+gameOver :: GameState -> Boolean
+gameOver gs = gs.status == Lost || gs.status == Won
+
 gameLogic :: Channel Maze -> Inputs -> GameState -> Effect GameState
-gameLogic rerenderChan inputs gameState = if gameState.status == Lost || gameState.status == Won then pure (gameState { dragging = Nothing }) else do
-  case inputs of
-    Mouse mouseInputs -> do
+gameLogic rerenderChan inputs gameState =
+  case { inputs, gameOver: (gameOver gameState) } of
+    { inputs: Mouse mouseInputs, gameOver: false } -> do
       let (Tuple (Tuple msgToSend shouldReRender) nextGameState) = runState (gameLogicState mouseInputs) gameState
       Chan.send rerenderChan nextGameState.maze
       either (maybe (pure unit) log)
@@ -288,7 +291,7 @@ gameLogic rerenderChan inputs gameState = if gameState.status == Lost || gameSta
             m <- note Nothing msgToSend
             pure { ws: ws, m: genericEncodeJSON defaultOptions m })
       pure nextGameState
-    Keyboard arrowKeys -> do
+    { inputs: Keyboard arrowKeys, gameOver: _ } -> do
       let mul = 50.0
           xLeft = if arrowKeys.left then (-1.0) else 0.0
           xRight = if arrowKeys.right then 1.0 else 0.0
@@ -300,14 +303,14 @@ gameLogic rerenderChan inputs gameState = if gameState.status == Lost || gameSta
                 { x: cx + mul * (xLeft + xRight), y: cy + mul * (yUp + yDown) } }
     -- TODO implement middle click scroll
     -- FIXME don't scroll if control is pressed, allow browser zoom, or implement custom zoom
-    MouseWheel { screenDims, offscreenDims, mWheelEvent } -> do
+    { inputs: MouseWheel { screenDims, offscreenDims, mWheelEvent }, gameOver: _ } -> do
       let cx = gameState.renderOffset.x
           cy = gameState.renderOffset.y
           wx = fromMaybe 0.0 (deltaX <$> mWheelEvent)
           wy = fromMaybe 0.0 (deltaY <$> mWheelEvent)
       pure $ gameState { renderOffset = clipRenderOffset screenDims offscreenDims (gameState.maze^.borders)
                 { x: floor $ cx - wx, y: floor $ cy - wy } }
-    ServerMsg mMsg -> do
+    { inputs: ServerMsg mMsg, gameOver: _ } -> do
       -- TODO error logging
       let (decodedMsg :: F S2CCommand) =
             genericDecodeJSON defaultOptions =<< (maybe (fail (ForeignError "nothing")) pure mMsg)
@@ -316,8 +319,9 @@ gameLogic rerenderChan inputs gameState = if gameState.status == Lost || gameSta
             let newState = evalServerCommand cmd gameState
             in Chan.send rerenderChan newState.maze *> pure newState)
         (runExcept decodedMsg)
-    Tick ->
+    { inputs: Tick, gameOver: false } ->
       if gameState.timer <= 1 then
-        pure $ gameState { timer = 0, status = Lost }
+        pure $ gameState { timer = 0, status = Lost, dragging = Nothing }
       else
         pure $ gameState { timer = gameState.timer - 1 }
+    _ -> pure gameState

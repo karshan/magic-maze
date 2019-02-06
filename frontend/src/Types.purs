@@ -7,7 +7,7 @@ import Data.Generic.Rep.Show (genericShow)
 import Data.Int (toNumber)
 import Data.Lens (Lens', lens, (^.))
 import Data.Map (Map, lookup)
-import Data.Maybe (Maybe, maybe)
+import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Tuple (Tuple)
 import Foreign.Class (class Encode, class Decode)
@@ -155,8 +155,9 @@ serverGameState :: Lens' GameState ServerGameState
 serverGameState = lens toSGS setFromSGS
   where
     toSGS gs = ServerGameState { maze: gs.maze, tiles: gs.tiles, players: gs.players, timer: gs.timer, status: gs.status }
+    -- We set dragging to Nothing when the server explicitly sends us a state. Because this only happens when the game starts.
     setFromSGS gs (ServerGameState sgs) =
-      gs { maze = sgs.maze, players = sgs.players, tiles = sgs.tiles, timer = sgs.timer, status = sgs.status }
+      gs { maze = sgs.maze, players = sgs.players, tiles = sgs.tiles, timer = sgs.timer, status = sgs.status, dragging = Nothing }
 
 left :: forall v. Lens' (DirMap v) v
 left = lens (_.left <<< unwrap) $ \s b -> wrap $ _ { left = b } $ unwrap s

@@ -71,7 +71,7 @@ cellWeapon :: Assets -> Maybe SpecialTile -> Drawing
 cellWeapon assets (Just (STWeapon col)) = drawCellWeapon col (maybe mempty image $ lookup (AWeapon col) assets)
 cellWeapon _ _ = mempty
 
--- FIXME light1 must = base, or wall corners will look weird
+-- TODO light1 must = base, or wall corners will look weird
 baseColors :: ColorSet
 baseColors = { base: rgb 0x94 0xA7 0xC3, light1: rgb 0x94 0xA7 0xC3, light2: rgb 0xC0 0xD0 0xE7 }
 
