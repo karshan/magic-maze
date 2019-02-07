@@ -90,7 +90,7 @@ type GameState = {
   }
 
 -- CLEANUP GameState = { sgs :: ServerGameState } get rid of the duplication. Similar cleanup for Tile and Maze ?
-newtype ServerGameState = ServerGameState { 
+newtype ServerGameState = ServerGameState {
   maze :: Maze,
   tiles :: Array Tile,
   players :: PlayerPositions,
@@ -123,6 +123,7 @@ data S2CCommand =
   | SSetState ServerGameState
   | SSetAllowedDir Dir
   | SSetClients (Map String Dir)
+  | SRoomFull
 
 data PlayerColor =
     Red

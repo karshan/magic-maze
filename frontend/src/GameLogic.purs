@@ -104,7 +104,7 @@ isValidMove pCol targetPos gs = maybe false (const true) $ do
   targetCell <- Map.lookup targetPos (gs.maze^.cells)
   guard (targetCell^.special /= (Just STUnwalkable)) (pure unit)
   guard (not $ any (_ == targetPos) gs.players) (pure unit)
-  if (isEscalator (gs.maze^.escalators) currentPos targetPos && gs.allowedDir == E) || 
+  if (isEscalator (gs.maze^.escalators) currentPos targetPos && gs.allowedDir == E) ||
     (targetCell^.special == Just (STWarp pCol) && gs.status /= WeaponsAcquired && gs.allowedDir == W) then
     pure $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
     else do
@@ -115,7 +115,7 @@ isValidMove pCol targetPos gs = maybe false (const true) $ do
       pure $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
 
 evalServerCommand :: S2CCommand -> GameState -> GameState
-evalServerCommand (SPlayerMove pCol targetPos) gs = 
+evalServerCommand (SPlayerMove pCol targetPos) gs =
   fst $ evalArriveAtSpecialCell pCol targetPos $ gs { players = Map.update (const $ Just targetPos) pCol gs.players }
 evalServerCommand (SExplore nextTile mp dir) gs =
   maybe gs (gs { maze = _, tiles = fromMaybe [] (deleteAt nextTile gs.tiles) })
@@ -123,6 +123,7 @@ evalServerCommand (SExplore nextTile mp dir) gs =
 evalServerCommand (SSetState sgs) gs = gs # serverGameState .~ sgs
 evalServerCommand (SSetAllowedDir dir) gs = gs { allowedDir = dir }
 evalServerCommand (SSetClients clients) gs = gs { clients = clients }
+evalServerCommand SRoomFull gs = gs { status = Lost }
 
 newtype All = All Boolean
 derive instance newtypeAll :: Newtype All _
@@ -133,10 +134,10 @@ instance monoidAll :: Monoid All where
 
 weaponsAcquired :: GameState -> Boolean
 weaponsAcquired gs =
-    unwrap $ fold $ mapWithIndex 
-        (\pCol mp -> 
-            maybe (All false) 
-                (\cell -> All $ cell ^. special == Just (STWeapon pCol)) 
+    unwrap $ fold $ mapWithIndex
+        (\pCol mp ->
+            maybe (All false)
+                (\cell -> All $ cell ^. special == Just (STWeapon pCol))
                 (Map.lookup mp $ gs.maze ^. cells))
         (gs.players)
 
@@ -174,7 +175,6 @@ evalClientCommand (CPlayerMove pCol _ targetPos) gs =
   else
     Tuple gs false
 evalClientCommand (CExplore _ _) gs = Tuple gs false
-      
 
 -- TODO evalBBox in descending order of player y coordinate
 maybeStartDrag :: RealMouseInputs -> PlayerPositions -> Maybe DragState

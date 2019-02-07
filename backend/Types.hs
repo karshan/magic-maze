@@ -20,6 +20,7 @@ data S2CCommand =
   | SSetState ServerGameState
   | SSetAllowedDir Dir
   | SSetClients (Map Text Dir)
+  | SRoomFull
       deriving (Eq, Ord, Show)
 
 data PlayerColor =

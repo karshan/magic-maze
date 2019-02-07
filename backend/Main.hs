@@ -58,24 +58,27 @@ genName = do
     toS . concat . catMaybes <$> mapM rand [ c, v, c, v, c, v, c ]
 
 -- TODO check if randomName already exists ?
-addClient :: MVar RoomState -> PendingConnection -> IO (Text, Dir, Connection)
+addClient :: MVar RoomState -> PendingConnection -> IO (Maybe (Text, Dir), Connection)
 addClient mv pendingConn = do
     name <- genName
     let updatePongTime :: RoomState -> IO RoomState
         updatePongTime roomState = do
             t <- getCurrentTime
             return $ roomState & connections %~ (Map.adjust (lastPong .~ t) name)
-    conn <- acceptRequest (pendingConn { pendingOptions = 
-                (pendingOptions pendingConn) 
+    conn <- acceptRequest (pendingConn { pendingOptions =
+                (pendingOptions pendingConn)
                 { connectionOnPong = modifyMVar_ mv updatePongTime } })
-    dir <- modifyMVar mv 
-        (\roomState -> do
-            let remainingDirs = Set.fromList [ N, E, S, W ] \\ Set.fromList (map (view allowedDir) $ Map.elems $ roomState ^. connections)
-            randomDir <- fromMaybe N . ([N, E, S, W] !!) . (`mod` 4) <$> randomIO
-            dir <- fromMaybe randomDir . ((Set.toList remainingDirs) !!) . (`mod` length remainingDirs) <$> randomIO
-            curTime <- getCurrentTime
-            return $ (roomState & connections %~ (Map.insert name (ConnectionState conn dir curTime)), dir))
-    return (name, dir, conn)
+    mDir <- modifyMVar mv
+        (\roomState ->
+            if length (roomState ^. connections) >= 4 then
+                return (roomState, Nothing)
+            else do
+                let remainingDirs = Set.fromList [ N, E, S, W ] \\ Set.fromList (map (view allowedDir) $ Map.elems $ roomState ^. connections)
+                randomDir <- fromMaybe N . ([N, E, S, W] !!) . (`mod` 4) <$> randomIO
+                dir <- fromMaybe randomDir . ((Set.toList remainingDirs) !!) . (`mod` length remainingDirs) <$> randomIO
+                curTime <- getCurrentTime
+                return $ (roomState & connections %~ (Map.insert name (ConnectionState conn dir curTime)), Just dir))
+    return $ maybe (Nothing, conn) (\dir -> (Just (name, dir), conn)) mDir
 
 removeClient :: MVar RoomState -> Text -> IO ()
 removeClient mv name = modifyMVar_ mv (return . over connections (Map.delete name))
@@ -106,7 +109,7 @@ broadcastClients roomStateMV = do
     roomState <- readMVar roomStateMV
     mapM_ (\(n, connState) ->
                 sendTextData (connState ^. connection) $
-                    encode $ SSetClients $ map (view allowedDir) $ Map.filterWithKey (\k _ -> k /= n) $ roomState ^. connections) 
+                    encode $ SSetClients $ map (view allowedDir) $ Map.filterWithKey (\k _ -> k /= n) $ roomState ^. connections)
         (Map.toList $ roomState ^. connections)
 
 -- FIXME keepAlive ping, and SetState when client comes to life after being dead
@@ -129,39 +132,43 @@ main = do
                             return (Map.insert path newRoomStateMV serverState, newRoomStateMV))
                         (\existingRoomStateMV -> return (serverState, existingRoomStateMV))
                         (Map.lookup path serverState))
-            (name, allowedDir, conn) <- addClient roomStateMV pendingConn
-            sendTextData conn (encode $ SSetAllowedDir allowedDir)
-            broadcastClients roomStateMV
-            gameStateAtConn <- view gameState <$> readMVar roomStateMV
-            sendTextData conn (encode (SSetState gameStateAtConn))
-            flip finally 
-                (do
-                    removeClient roomStateMV name
-                    broadcastClients roomStateMV) $ do
-                forkPingThread conn 30
-                forever $ do
-                    (a :: Text) <- receiveData conn
-                    let eCommand = (eitherDecode (toS a) :: Either String C2SCommand)
-                    print eCommand
-                    status <- view (gameState.L.status) <$> readMVar roomStateMV
-                    if status == Lost || status == Won then
-                        return ()
-                    else
-                        either (const $ return ())
-                            (\command -> do
-                                mCommandToSend <- modifyMVar roomStateMV
-                                    (\roomState -> do
-                                        (newGameState, mCommandToSend) <-
-                                                evalRandIO (evalCommand command allowedDir (roomState ^. gameState))
-                                        return (roomState & gameState .~ newGameState, mCommandToSend))
-                                maybe (return ()) 
-                                    (\commandToSend ->
-                                        let brdcst = case commandToSend of
-                                                SPlayerMove _ _ -> broadcastExcept name
-                                                _ -> broadcast
-                                        in brdcst roomStateMV $ toS $ encode commandToSend)
-                                    mCommandToSend)
-                            eCommand
+            (mNameDir, conn) <- addClient roomStateMV pendingConn
+            maybe
+                (sendTextData conn (encode SRoomFull) >> sendClose conn ("" :: Text))
+                (\(name, allowedDir) -> do
+                    sendTextData conn (encode $ SSetAllowedDir allowedDir)
+                    broadcastClients roomStateMV
+                    gameStateAtConn <- view gameState <$> readMVar roomStateMV
+                    sendTextData conn (encode (SSetState gameStateAtConn))
+                    (flip finally
+                        (do
+                            removeClient roomStateMV name
+                            broadcastClients roomStateMV) $ do
+                        forkPingThread conn 30
+                        forever $ do
+                            (a :: Text) <- receiveData conn
+                            let eCommand = (eitherDecode (toS a) :: Either String C2SCommand)
+                            print eCommand
+                            status <- view (gameState.L.status) <$> readMVar roomStateMV
+                            if status == Lost || status == Won then
+                                sendClose conn ("" :: Text)
+                            else
+                                either (const $ return ())
+                                    (\command -> do
+                                        mCommandToSend <- modifyMVar roomStateMV
+                                            (\roomState -> do
+                                                (newGameState, mCommandToSend) <-
+                                                        evalRandIO (evalCommand command allowedDir (roomState ^. gameState))
+                                                return (roomState & gameState .~ newGameState, mCommandToSend))
+                                        maybe (return ())
+                                            (\commandToSend ->
+                                                let brdcst = case commandToSend of
+                                                        SPlayerMove _ _ -> broadcastExcept name
+                                                        _ -> broadcast
+                                                in brdcst roomStateMV $ toS $ encode commandToSend)
+                                            mCommandToSend)
+                                    eCommand))
+                mNameDir
         redir req = if "." `T.isInfixOf` T.concat (pathInfo req) then req else req { pathInfo = [ "index.html" ] }
         backupApp :: Application
         backupApp request f =
