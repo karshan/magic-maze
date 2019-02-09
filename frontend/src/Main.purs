@@ -30,6 +30,7 @@ import Signal.Channel (channel, send, subscribe)
 import Signal.DOM (DimensionPair, MouseButton(..), animationFrame, keyPressed, mouseButtonPressed, mousePos, windowDimensions)
 import Signal.Effect (foldEffect, mapEffect)
 import Signal.MouseWheel (create) as Wheel
+import Signal.Touch (create) as Touch
 import Signal.Time (every)
 import Signal.WebSocket (create) as WS
 import Types (Asset, AssetName(..), Assets, DirMap(..), Dir(..), Escalator(..), GameState, Inputs(..), MapPoint, Maze, PlayerColor(..), cells, down, escalators, forAllCells, left, right, toPoint, up)
@@ -79,9 +80,9 @@ renderMaze ctx { maze, offscreenDims, assets } = do
 
 render :: Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Assets -> Point -> GameState -> Effect Unit
 render ctx offscreenCanvas offscreenDims screenDims assets realMouse gameState = do
-  let debugText = renderText 100.0 100.0 white 12 (show $ { 
-        timer: gameState.timer, 
-        status: gameState.status, 
+  let debugText = renderText 100.0 100.0 white 12 (show $ {
+        timer: gameState.timer,
+        status: gameState.status,
         numTilesLeft: (length gameState.tiles :: Int),
         allowedDir: gameState.allowedDir,
         clients: gameState.clients
@@ -102,11 +103,11 @@ render ctx offscreenCanvas offscreenDims screenDims assets realMouse gameState =
   let bg = maybe mempty image (Map.lookup ABackground assets)
   -- TODO move overlay rendering to GFX
   let scrDims = { w: toNumber screenDims.w, h: toNumber screenDims.h }
-  D.render ctx 
-    (GFX.background screenDims bg <> 
+  D.render ctx
+    (GFX.background screenDims bg <>
       (translate (-r.x) (-r.y) (
-        image (canvasElementToImageSource offscreenCanvas) <> 
-        players)) <> 
+        image (canvasElementToImageSource offscreenCanvas) <>
+        players)) <>
       debugText <> overlay scrDims gameState assets)
 
 resize :: CanvasElement -> DimensionPair -> Effect Unit
@@ -153,16 +154,20 @@ main = onDOMContentLoaded do
     maybe
         (log "error no canvas")
         (\canvas -> do
+            touch <- Touch.create (unsafeCoerce canvas)
             let mouseMove = { offscreenDims: _, mousePos: _, mousePressed: _, ws: _ } <$>
                             offscreenDims <*> mPos <*> mPressed <*> ws
             let arrowKeys = { screenDims: _, offscreenDims: _, up: _, right: _, down: _, left: _ } <$>
                             scrDims <*> offscreenDims <*> upKey <*> rightKey <*> downKey <*> leftKey
             let mouseWheelInputs = { screenDims: _, offscreenDims: _, mWheelEvent: _ } <$>
                             scrDims <*> offscreenDims <*> mouseWheel
+            let touchInputs = { screenDims: _, offscreenDims: _, mTouchEvent: _ } <$>
+                            scrDims <*> offscreenDims <*> touch
             let inputs =
                   foldl merge
-                    (Keyboard <$> arrowKeys) [ 
+                    (Keyboard <$> arrowKeys) [
                       MouseWheel <$> mouseWheelInputs,
+                      Touch <$> touchInputs,
                       Mouse <$> sampleOn mPressed mouseMove,
                       ServerMsg <$> serverMsg,
                       const Tick <$> every 1000.0

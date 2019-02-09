@@ -33,6 +33,7 @@ import Tiles (mergeTiles)
 import Types (C2SCommand(..), Cell, Dir(..), DirMap(..), DragState, Escalator(..), GameState, GameStatus(..), Inputs(..), MapPoint(..), Maze(..), MouseInputs, PlayerColor, PlayerPositions, RealMouseInputs, S2CCommand(..), ScreenPoint(..), SpecialTile(..), borders, cells, down, escalators, forAllCells, right, special, toPoint, walls, serverGameState)
 import Web.Socket.WebSocket as WS
 import Web.UIEvent.WheelEvent (deltaX, deltaY)
+import Unsafe.Coerce
 
 initialState :: GameState
 initialState = {
@@ -280,7 +281,7 @@ gameOver gs = gs.status == Lost || gs.status == Won
 
 gameLogic :: Channel Maze -> Inputs -> GameState -> Effect GameState
 gameLogic rerenderChan inputs gameState =
-  case { inputs, gameOver: (gameOver gameState) } of
+  case { inputs, gameOver: gameOver gameState } of
     { inputs: Mouse mouseInputs, gameOver: false } -> do
       let (Tuple (Tuple msgToSend shouldReRender) nextGameState) = runState (gameLogicState mouseInputs) gameState
       Chan.send rerenderChan nextGameState.maze
@@ -291,7 +292,7 @@ gameLogic rerenderChan inputs gameState =
             m <- note Nothing msgToSend
             pure { ws: ws, m: genericEncodeJSON defaultOptions m })
       pure nextGameState
-    { inputs: Keyboard arrowKeys, gameOver: _ } -> do
+    { inputs: Keyboard arrowKeys } -> do
       let mul = 50.0
           xLeft = if arrowKeys.left then (-1.0) else 0.0
           xRight = if arrowKeys.right then 1.0 else 0.0
@@ -303,14 +304,14 @@ gameLogic rerenderChan inputs gameState =
                 { x: cx + mul * (xLeft + xRight), y: cy + mul * (yUp + yDown) } }
     -- TODO implement middle click scroll
     -- FIXME don't scroll if control is pressed, allow browser zoom, or implement custom zoom
-    { inputs: MouseWheel { screenDims, offscreenDims, mWheelEvent }, gameOver: _ } -> do
+    { inputs: MouseWheel { screenDims, offscreenDims, mWheelEvent } } -> do
       let cx = gameState.renderOffset.x
           cy = gameState.renderOffset.y
           wx = fromMaybe 0.0 (deltaX <$> mWheelEvent)
           wy = fromMaybe 0.0 (deltaY <$> mWheelEvent)
       pure $ gameState { renderOffset = clipRenderOffset screenDims offscreenDims (gameState.maze^.borders)
                 { x: floor $ cx - wx, y: floor $ cy - wy } }
-    { inputs: ServerMsg mMsg, gameOver: _ } -> do
+    { inputs: ServerMsg mMsg } -> do
       -- TODO error logging
       let (decodedMsg :: F S2CCommand) =
             genericDecodeJSON defaultOptions =<< (maybe (fail (ForeignError "nothing")) pure mMsg)
@@ -324,4 +325,8 @@ gameLogic rerenderChan inputs gameState =
         pure $ gameState { timer = 0, status = Lost, dragging = Nothing }
       else
         pure $ gameState { timer = gameState.timer - 1 }
+    { inputs: Touch { screenDims, offscreenDims, mTouchEvent }, gameOver: _ } -> do
+      -- TODO
+      maybe (pure unit) (log <<< unsafeCoerce) mTouchEvent
+      pure gameState
     _ -> pure gameState

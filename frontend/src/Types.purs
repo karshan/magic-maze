@@ -16,6 +16,7 @@ import Graphics.Canvas (CanvasImageSource)
 import Graphics.Drawing (Point)
 import Prelude
 import Signal.DOM (DimensionPair, CoordinatePair)
+import Signal.Touch (TouchEvent_)
 import Web.Socket.WebSocket (WebSocket)
 import Web.UIEvent.WheelEvent (WheelEvent)
 
@@ -106,10 +107,13 @@ type KeyboardInputs =
   { screenDims :: { w :: Number, h :: Number }, offscreenDims :: DimensionPair, up :: Boolean, down :: Boolean, left :: Boolean, right :: Boolean }
 type MouseWheelInputs =
   { screenDims :: { w :: Number, h :: Number }, offscreenDims :: DimensionPair, mWheelEvent :: (Maybe WheelEvent) }
+type TouchInputs =
+  { screenDims :: { w :: Number, h :: Number }, offscreenDims :: DimensionPair, mTouchEvent :: (Maybe TouchEvent_) }
 data Inputs =
     Mouse MouseInputs
   | Keyboard KeyboardInputs
   | MouseWheel MouseWheelInputs
+  | Touch TouchInputs
   | ServerMsg (Maybe String)
   | Tick
 
