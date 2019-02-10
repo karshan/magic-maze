@@ -5,12 +5,13 @@ import Data.Map (lookup)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Monoid (guard)
 import GFX as GFX
-import Graphics.Drawing (Drawing, Point)
+import Graphics.Drawing (Drawing, Point, image)
 import Isometric (evalIsoBBox, mapToScreenD)
 import Prelude
 import Signal.DOM (DimensionPair)
-import Types (Assets, Cell, Cells, Dir, MapPoint (..), ScreenPoint, SpecialTile(..), down, right, special, walls)
+import Types (Assets, AssetName(..), Cell, Cells, Dir, MapPoint (..), ScreenPoint, SpecialTile(..), down, right, special, walls)
 
+-- TODO all these functions should be in the reader monad
 drawCell :: Assets -> DimensionPair -> Cells -> Int -> Int -> Cell -> Drawing
 drawCell assets dims maze x y cell =
   let mp x_ y_ = MapPoint { x: x_, y: y_ }
@@ -32,14 +33,14 @@ drawCellWeapon assets dims maze x y cell =
         (cell^.special))
 
 -- FIXME this fails to draw NW corner in the case the NW corner has no NW neighbor
-drawCellWall :: DimensionPair -> Cells -> Int -> Int -> Cell -> Drawing
-drawCellWall dims maze x y cell =
+drawCellWall :: Assets -> DimensionPair -> Cells -> Int -> Int -> Cell -> Drawing
+drawCellWall assets dims maze x y cell =
  let mp x_ y_ = MapPoint { x: x_, y: y_ }
      cellT = mapToScreenD dims (MapPoint {x, y})
- in guard (cell^.walls^.right) (cellT GFX.wallRight)
- <> guard (cell^.walls^.down) (cellT GFX.wallDown)
- <> guard (cell^.walls^.right && cell^.walls^.down) (cellT GFX.wallSECorner')
- <> maybe mempty (const (cellT GFX.wallNWCorner'))
+ in guard (cell^.walls^.right && not (cell^.walls^.down)) (cellT $ maybe mempty image $ lookup AWallRight assets)
+ <> guard (cell^.walls^.down && not (cell^.walls^.right)) (cellT $ maybe mempty image $ lookup AWallDown assets)
+ <> guard (cell^.walls^.right && cell^.walls^.down) (cellT $ maybe mempty image $ lookup AWallRightDown assets)
+ <> maybe mempty (const (cellT $ maybe mempty image $ lookup AWallNWCorner assets))
       (do eastCell <- lookup (mp (x + 1) y) maze
           guard (eastCell^.walls^.down) (pure unit)
           southCell <- lookup (mp x (y + 1)) maze

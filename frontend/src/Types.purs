@@ -26,9 +26,13 @@ newtype MapPoint = MapPoint { x :: Int, y :: Int }
 
 data AssetName =
     APlayer PlayerColor
-  | AExplore PlayerColor
+  | AExplore PlayerColor Dir
+  | AWallRight
+  | AWallDown
+  | AWallRightDown
+  | AWallNWCorner
   | AWarp PlayerColor
-  | AExit PlayerColor
+  | AExit PlayerColor Dir
   | AWeapon PlayerColor
   | AHourglassRed
   | AHourglassBlack
@@ -40,6 +44,7 @@ data AssetName =
   | ACellBottomRight
   | ACellBottomLeft
 type Asset = Tuple AssetName (Maybe CanvasImageSource)
+-- TODO there should be a non empty map (aka record) version of this. That will remove a *lot* of `maybe mempty image` code snippets
 type Assets = Map AssetName CanvasImageSource
 
 newtype DirMap v = DirMap { left :: v, up :: v, right :: v, down :: v }

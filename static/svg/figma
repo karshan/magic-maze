@@ -1,0 +1,57 @@
+#!/bin/sh
+FIGMA_TOKEN=$(cat figma-access-token)
+FIGMA_FILE=$(cat figma-file)
+
+if test -e figma_file.json; then
+    true
+else
+    curl -sH "X-Figma-Token: $FIGMA_TOKEN" "https://api.figma.com/v1/files/$FIGMA_FILE" > figma_file.json
+fi
+
+get_id () {
+    cat figma_file.json | jq -r ".document.children[] | select(.name == \"Components\").children[] | select(.name == \"$1\").id"
+}
+
+download_svg () {
+    ID=$(get_id $1)
+    URL=$(curl -sH "X-Figma-Token: $FIGMA_TOKEN" "https://api.figma.com/v1/images/$FIGMA_FILE?ids=$ID&format=svg" | jq -r ".images.\"$ID\"")
+    curl $URL -o $1.svg
+}
+
+#download_svg "explore-purple-w"
+#download_svg "explore-purple-s"
+#download_svg "explore-purple-e"
+#download_svg "explore-purple-n"
+#download_svg "explore-red-w"
+#download_svg "explore-red-s"
+#download_svg "explore-red-e"
+#download_svg "explore-red-n"
+#download_svg "explore-yellow-w"
+#download_svg "explore-yellow-s"
+#download_svg "explore-yellow-e"
+#download_svg "explore-yellow-n"
+#download_svg "explore-green-w"
+#download_svg "explore-green-s"
+#download_svg "explore-green-e"
+#download_svg "explore-green-n"
+download_svg "wall-nw-corner"
+download_svg "wall-right-down"
+download_svg "wall-down"
+download_svg "wall-right"
+#download_svg "cell-down-edge"
+#download_svg "cell-right-edge"
+#download_svg "cell-top"
+#download_svg "card-west"
+#download_svg "card-south"
+#download_svg "card-east"
+#download_svg "card-north"
+#download_svg "warp-green"
+#download_svg "warp-yellow"
+#download_svg "warp-red"
+#download_svg "warp-purple"
+#download_svg "hourglass-red"
+#download_svg "hourglass-black"
+download_svg "exit-purple-n"
+download_svg "exit-purple-e"
+download_svg "exit-purple-s"
+download_svg "exit-purple-w"

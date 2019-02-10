@@ -72,10 +72,11 @@ renderMaze ctx { maze, offscreenDims, assets } = do
   D.render ctx (filled (D.fillColor (rgba 0 0 0 0.0)) (rectangle 0.0 0.0 (toNumber offscreenDims.w) (toNumber offscreenDims.h)))
   let rcells = forAllCells maze (drawCell assets offscreenDims (maze^.cells))
   -- FIXME draw border walls on left and top
-  let rwalls = forAllCells maze (drawCellWall offscreenDims (maze^.cells))
+  let rwalls = forAllCells maze (drawCellWall assets offscreenDims (maze^.cells))
   let rweapons = forAllCells maze (drawCellWeapon assets offscreenDims (maze^.cells))
   let rescalators = foldMap (\(Escalator mp1 mp2) -> drawEscalator offscreenDims mp1 mp2) (maze^.escalators)
-  D.render ctx (rcells <> rwalls <> rescalators <> rweapons)
+  -- We translate the cell and walls so that Isometric.mapToScreen maps to the NW corner of the tile
+  D.render ctx ((translate (-tileHalfWidth) 0.0 (rcells <> rwalls)) <> rescalators <> rweapons)
 
 
 render :: Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Assets -> Point -> GameState -> Effect Unit
@@ -186,10 +187,26 @@ main = onDOMContentLoaded do
                         Tuple (APlayer Yellow) "/svg/player-yellow.svg",
                         Tuple (APlayer Green) "/svg/player-green.svg",
                         Tuple (APlayer Purple) "/svg/player-purple.svg",
-                        Tuple (AExplore Red) "/svg/explore-red.svg",
-                        Tuple (AExplore Yellow) "/svg/explore-yellow.svg",
-                        Tuple (AExplore Green) "/svg/explore-green.svg",
-                        Tuple (AExplore Purple) "/svg/explore-purple.svg",
+                        Tuple (AExplore Red N) "/svg/explore-red-n.svg",
+                        Tuple (AExplore Red E) "/svg/explore-red-e.svg",
+                        Tuple (AExplore Red S) "/svg/explore-red-s.svg",
+                        Tuple (AExplore Red W) "/svg/explore-red-w.svg",
+                        Tuple (AExplore Yellow N) "/svg/explore-yellow-n.svg",
+                        Tuple (AExplore Yellow E) "/svg/explore-yellow-e.svg",
+                        Tuple (AExplore Yellow S) "/svg/explore-yellow-s.svg",
+                        Tuple (AExplore Yellow W) "/svg/explore-yellow-w.svg",
+                        Tuple (AExplore Green N) "/svg/explore-green-n.svg",
+                        Tuple (AExplore Green E) "/svg/explore-green-e.svg",
+                        Tuple (AExplore Green S) "/svg/explore-green-s.svg",
+                        Tuple (AExplore Green W) "/svg/explore-green-w.svg",
+                        Tuple (AExplore Purple N) "/svg/explore-purple-n.svg",
+                        Tuple (AExplore Purple E) "/svg/explore-purple-e.svg",
+                        Tuple (AExplore Purple S) "/svg/explore-purple-s.svg",
+                        Tuple (AExplore Purple W) "/svg/explore-purple-w.svg",
+                        Tuple AWallRight "/svg/wall-right.svg",
+                        Tuple AWallDown "/svg/wall-down.svg",
+                        Tuple AWallRightDown "/svg/wall-right-down.svg",
+                        Tuple AWallNWCorner "/svg/wall-nw-corner.svg",
                         Tuple (AWarp Red) "/svg/warp-red.svg",
                         Tuple (AWarp Yellow) "/svg/warp-yellow.svg",
                         Tuple (AWarp Green) "/svg/warp-green.svg",
@@ -198,7 +215,10 @@ main = onDOMContentLoaded do
                         Tuple (AWeapon Yellow) "/svg/weapon-yellow.svg",
                         Tuple (AWeapon Green) "/svg/weapon-green.svg",
                         Tuple (AWeapon Purple) "/svg/weapon-purple.svg",
-                        Tuple (AExit Purple) "/svg/exit-purple.svg",
+                        Tuple (AExit Purple N) "/svg/exit-purple-n.svg",
+                        Tuple (AExit Purple E) "/svg/exit-purple-e.svg",
+                        Tuple (AExit Purple S) "/svg/exit-purple-s.svg",
+                        Tuple (AExit Purple W) "/svg/exit-purple-w.svg",
                         Tuple (ACard N) "/svg/card-north.svg",
                         Tuple (ACard E) "/svg/card-east.svg",
                         Tuple (ACard S) "/svg/card-south.svg",

@@ -20,6 +20,7 @@
     "purescript-web-dom": "^1.0.0",
     "purescript-web-html": "^1.2.0",
     "purescript-web-uievents": "^1.1.0",
+    "purescript-web-touchevents": "^1.0.0",
     "purescript-profunctor-lenses": "^5.0.0"
   },
   "devDependencies": {
