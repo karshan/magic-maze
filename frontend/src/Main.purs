@@ -1,6 +1,6 @@
 module Main where
 
-import Color (rgba, white)
+import Color (rgba, white, black)
 import DOM (onDOMContentLoaded)
 import Data.Foldable (foldl, foldMap, length)
 import Data.FoldableWithIndex (foldWithIndexM, foldMapWithIndex)
@@ -33,13 +33,14 @@ import Signal.MouseWheel (create) as Wheel
 import Signal.Touch (create) as Touch
 import Signal.Time (every)
 import Signal.WebSocket (create) as WS
-import Types (Asset, AssetName(..), Assets, DirMap(..), Dir(..), Escalator(..), GameState, Inputs(..), MapPoint, Maze, PlayerColor(..), cells, down, escalators, forAllCells, left, right, toPoint, up)
+import Types (AssetName(..), GAssets, Assets, DirMap(..), Dir(..), Escalator(..), GameState, Inputs(..), MapPoint, Maze, PlayerColor(..), assetLookup, cells, down, escalators, forAllCells, left, right, toPoint, up)
 import Unsafe.Coerce (unsafeCoerce) -- TODO move to purescript-canvas
 import Web.DOM.Document (createElement)
 import Web.HTML (window)
 import Web.HTML.HTMLDocument (toDocument)
 import Web.HTML.Window (document, location)
 import Web.HTML.Location (host, pathname, protocol)
+import Record.Extra
 
 translate' :: Point -> Drawing -> Drawing
 translate' { x, y } = translate x y
@@ -67,69 +68,68 @@ drawEscalator offscreenDims mp1 mp2 =
        outlined (lineWidth 4.0 <> outlineColor (rgba 120 120 120 1.0)) $
          path $ map mp2p [ mp1, mp2 ]
 
-renderMaze :: Context2D -> { maze :: Maze, offscreenDims :: DimensionPair, assets :: Assets } -> Effect Unit
-renderMaze ctx { maze, offscreenDims, assets } = do
-  D.render ctx (filled (D.fillColor (rgba 0 0 0 0.0)) (rectangle 0.0 0.0 (toNumber offscreenDims.w) (toNumber offscreenDims.h)))
-  let rcells = forAllCells maze (drawCell assets offscreenDims (maze^.cells))
-  -- FIXME draw border walls on left and top
-  let rwalls = forAllCells maze (drawCellWall assets offscreenDims (maze^.cells))
-  let rweapons = forAllCells maze (drawCellWeapon assets offscreenDims (maze^.cells))
-  let rescalators = foldMap (\(Escalator mp1 mp2) -> drawEscalator offscreenDims mp1 mp2) (maze^.escalators)
-  -- We translate the cell and walls so that Isometric.mapToScreen maps to the NW corner of the tile
-  D.render ctx ((translate (-tileHalfWidth) 0.0 (rcells <> rwalls)) <> rescalators <> rweapons)
+renderMaze :: Context2D -> { maze :: Maze, offscreenDims :: DimensionPair, mAssets :: Maybe Assets } -> Effect Unit
+renderMaze ctx { maze, offscreenDims, mAssets } =
+  maybe (pure unit) (\assets -> do
+    D.render ctx (filled (D.fillColor (rgba 0 0 0 0.0)) (rectangle 0.0 0.0 (toNumber offscreenDims.w) (toNumber offscreenDims.h)))
+    let rcells = forAllCells maze (drawCell assets offscreenDims (maze^.cells))
+    -- FIXME draw border walls on left and top
+    let rwalls = forAllCells maze (drawCellWall assets offscreenDims (maze^.cells))
+    let rweapons = forAllCells maze (drawCellWeapon assets offscreenDims (maze^.cells))
+    let rescalators = foldMap (\(Escalator mp1 mp2) -> drawEscalator offscreenDims mp1 mp2) (maze^.escalators)
+    -- We translate the cell and walls so that Isometric.mapToScreen maps to the NW corner of the tile
+    D.render ctx ((translate (-tileHalfWidth) 0.0 (rcells <> rwalls)) <> rescalators <> rweapons))
+    mAssets
 
 
-render :: Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Assets -> Point -> GameState -> Effect Unit
-render ctx offscreenCanvas offscreenDims screenDims assets realMouse gameState = do
-  let debugText = renderText 100.0 100.0 white 12 (show $ {
-        timer: gameState.timer,
-        status: gameState.status,
-        numTilesLeft: (length gameState.tiles :: Int),
-        allowedDir: gameState.allowedDir,
-        clients: gameState.clients
-      })
-  -- TODO draw dragging player first, then in descending order by y coordinate
-  let players =
-        (foldMapWithIndex
-          (\asset img ->
-              case asset of
-                APlayer p ->
-                    let mDragPoint = unwrap do
-                          ds <- First gameState.dragging
-                          guard (ds.playerColor == p) (pure ds.dragPoint)
-                    in maybe mempty (\pos -> drawPlayer offscreenDims pos mDragPoint realMouse img) (lookup p gameState.players)
-                _ -> mempty)
-        assets)
-  let r = gameState.renderOffset
-  let bg = maybe mempty image (Map.lookup ABackground assets)
-  -- TODO move overlay rendering to GFX
-  let scrDims = { w: toNumber screenDims.w, h: toNumber screenDims.h }
-  D.render ctx
-    (GFX.background screenDims bg <>
-      (translate (-r.x) (-r.y) (
-        image (canvasElementToImageSource offscreenCanvas) <>
-        players)) <>
-      debugText <> overlay scrDims gameState assets)
+loading :: DimensionPair -> Drawing
+loading screenDims =
+    filled (D.fillColor black) (rectangle 0.0 0.0 (toNumber screenDims.w) (toNumber screenDims.h)) <>
+      (renderText (toNumber screenDims.w/2.0) (toNumber screenDims.h/2.0) white 12 "Loading")
+
+render :: Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Maybe Assets -> Point -> GameState -> Effect Unit
+render ctx offscreenCanvas offscreenDims screenDims mAssets realMouse gameState =
+  maybe (D.render ctx $ loading screenDims) (\assets -> do
+    let debugText = renderText 100.0 100.0 white 12 (show $ {
+          timer: gameState.timer,
+          status: gameState.status,
+          numTilesLeft: (length gameState.tiles :: Int),
+          allowedDir: gameState.allowedDir,
+          clients: gameState.clients
+        })
+    -- TODO draw dragging player first, then in descending order by y coordinate
+    let players =
+          foldMapWithIndex
+            (\pCol pPos ->
+                let mDragPoint = unwrap do
+                      ds <- First gameState.dragging
+                      guard (ds.playerColor == pCol) (pure ds.dragPoint)
+                in drawPlayer offscreenDims pPos mDragPoint realMouse (assetLookup (APlayer pCol) assets))
+            gameState.players
+    let r = gameState.renderOffset
+    let bg = image (assetLookup ABackground assets)
+    let scrDims = { w: toNumber screenDims.w, h: toNumber screenDims.h }
+    D.render ctx
+      (GFX.background screenDims bg <>
+        (translate (-r.x) (-r.y) (
+          image (canvasElementToImageSource offscreenCanvas) <>
+          players)) <>
+        debugText <> overlay scrDims gameState assets))
+    mAssets
 
 resize :: CanvasElement -> DimensionPair -> Effect Unit
 resize canvas dims = do
   setCanvasWidth canvas (toNumber dims.w)
   setCanvasHeight canvas (toNumber dims.h)
 
-loadAsset :: AssetName -> String -> Effect (Signal Asset)
-loadAsset name url = do
-  c <- channel $ Tuple name Nothing
-  tryLoadImage url (send c <<< Tuple name)
+loadAsset :: String -> Effect (Signal (Maybe CanvasImageSource))
+loadAsset url = do
+  c <- channel Nothing
+  tryLoadImage url (send c)
   pure (subscribe c)
 
-loadAssets :: Map AssetName String -> Effect (Signal Assets)
-loadAssets toLoad =
-  foldWithIndexM
-    (\name accum url -> do
-        sig <- loadAsset name url
-        pure $ map2 (\(Tuple k v) m -> Map.alter (const v) k m) sig accum)
-    (constant (Map.empty))
-    toLoad
+loadAssets :: GAssets String -> Effect (Signal (Maybe Assets))
+loadAssets assetUrls = map (map sequenceRecord) $ map sequenceRecord $ sequenceRecord $ mapRecord loadAsset assetUrls
 
 main :: Effect Unit
 main = onDOMContentLoaded do
@@ -181,59 +181,58 @@ main = onDOMContentLoaded do
             runSignal (resize canvas <$> screenDims)
             runSignal (resize offscreenCanvas <$> offscreenDims)
             renderedMaze <- mapEffect (renderMaze offscreenCtx)
-            -- TODO show loading screen, wait for all assets to load then render
-            assets <- loadAssets $ Map.fromFoldable [
-                        Tuple (APlayer Red) "/svg/player-red.svg",
-                        Tuple (APlayer Yellow) "/svg/player-yellow.svg",
-                        Tuple (APlayer Green) "/svg/player-green.svg",
-                        Tuple (APlayer Purple) "/svg/player-purple.svg",
-                        Tuple (AExplore Red N) "/svg/explore-red-n.svg",
-                        Tuple (AExplore Red E) "/svg/explore-red-e.svg",
-                        Tuple (AExplore Red S) "/svg/explore-red-s.svg",
-                        Tuple (AExplore Red W) "/svg/explore-red-w.svg",
-                        Tuple (AExplore Yellow N) "/svg/explore-yellow-n.svg",
-                        Tuple (AExplore Yellow E) "/svg/explore-yellow-e.svg",
-                        Tuple (AExplore Yellow S) "/svg/explore-yellow-s.svg",
-                        Tuple (AExplore Yellow W) "/svg/explore-yellow-w.svg",
-                        Tuple (AExplore Green N) "/svg/explore-green-n.svg",
-                        Tuple (AExplore Green E) "/svg/explore-green-e.svg",
-                        Tuple (AExplore Green S) "/svg/explore-green-s.svg",
-                        Tuple (AExplore Green W) "/svg/explore-green-w.svg",
-                        Tuple (AExplore Purple N) "/svg/explore-purple-n.svg",
-                        Tuple (AExplore Purple E) "/svg/explore-purple-e.svg",
-                        Tuple (AExplore Purple S) "/svg/explore-purple-s.svg",
-                        Tuple (AExplore Purple W) "/svg/explore-purple-w.svg",
-                        Tuple AWallRight "/svg/wall-right.svg",
-                        Tuple AWallDown "/svg/wall-down.svg",
-                        Tuple AWallRightDown "/svg/wall-right-down.svg",
-                        Tuple AWallNWCorner "/svg/wall-nw-corner.svg",
-                        Tuple (AWarp Red) "/svg/warp-red.svg",
-                        Tuple (AWarp Yellow) "/svg/warp-yellow.svg",
-                        Tuple (AWarp Green) "/svg/warp-green.svg",
-                        Tuple (AWarp Purple) "/svg/warp-purple.svg",
-                        Tuple (AWeapon Red) "/svg/weapon-red.svg",
-                        Tuple (AWeapon Yellow) "/svg/weapon-yellow.svg",
-                        Tuple (AWeapon Green) "/svg/weapon-green.svg",
-                        Tuple (AWeapon Purple) "/svg/weapon-purple.svg",
-                        Tuple (AExit Purple N) "/svg/exit-purple-n.svg",
-                        Tuple (AExit Purple E) "/svg/exit-purple-e.svg",
-                        Tuple (AExit Purple S) "/svg/exit-purple-s.svg",
-                        Tuple (AExit Purple W) "/svg/exit-purple-w.svg",
-                        Tuple (ACard N) "/svg/card-north.svg",
-                        Tuple (ACard E) "/svg/card-east.svg",
-                        Tuple (ACard S) "/svg/card-south.svg",
-                        Tuple (ACard W) "/svg/card-west.svg",
-                        Tuple ACellTop "/svg/cell-top.svg",
-                        Tuple ACellBottomRight "/svg/cell-bottom-right.svg",
-                        Tuple ACellBottomLeft "/svg/cell-bottom-left.svg",
-                        Tuple AHourglassRed "/svg/hourglass-red.svg",
-                        Tuple AHourglassBlack "/svg/hourglass-black.svg",
-                        Tuple ABackground "/svg/background.svg",
-                        Tuple AOverlay "/svg/overlay.svg",
-                        Tuple ANametag "/svg/nametag.svg"
-                      ]
+            mAssets <- loadAssets {
+                        playerRed: "/svg/player-red.svg",
+                        playerYellow: "/svg/player-yellow.svg",
+                        playerGreen: "/svg/player-green.svg",
+                        playerPurple: "/svg/player-purple.svg",
+                        exploreRedN: "/svg/explore-red-n.svg",
+                        exploreRedE: "/svg/explore-red-e.svg",
+                        exploreRedS: "/svg/explore-red-s.svg",
+                        exploreRedW: "/svg/explore-red-w.svg",
+                        exploreYellowN: "/svg/explore-yellow-n.svg",
+                        exploreYellowE: "/svg/explore-yellow-e.svg",
+                        exploreYellowS: "/svg/explore-yellow-s.svg",
+                        exploreYellowW: "/svg/explore-yellow-w.svg",
+                        exploreGreenN: "/svg/explore-green-n.svg",
+                        exploreGreenE: "/svg/explore-green-e.svg",
+                        exploreGreenS: "/svg/explore-green-s.svg",
+                        exploreGreenW: "/svg/explore-green-w.svg",
+                        explorePurpleN: "/svg/explore-purple-n.svg",
+                        explorePurpleE: "/svg/explore-purple-e.svg",
+                        explorePurpleS: "/svg/explore-purple-s.svg",
+                        explorePurpleW: "/svg/explore-purple-w.svg",
+                        wallRight: "/svg/wall-right.svg",
+                        wallDown: "/svg/wall-down.svg",
+                        wallRightDown: "/svg/wall-right-down.svg",
+                        wallNWCorner: "/svg/wall-nw-corner.svg",
+                        warpRed: "/svg/warp-red.svg",
+                        warpYellow: "/svg/warp-yellow.svg",
+                        warpGreen: "/svg/warp-green.svg",
+                        warpPurple: "/svg/warp-purple.svg",
+                        weaponRed: "/svg/weapon-red.svg",
+                        weaponYellow: "/svg/weapon-yellow.svg",
+                        weaponGreen: "/svg/weapon-green.svg",
+                        weaponPurple: "/svg/weapon-purple.svg",
+                        exitPurpleN: "/svg/exit-purple-n.svg",
+                        exitPurpleE: "/svg/exit-purple-e.svg",
+                        exitPurpleS: "/svg/exit-purple-s.svg",
+                        exitPurpleW: "/svg/exit-purple-w.svg",
+                        cardN: "/svg/card-north.svg",
+                        cardE: "/svg/card-east.svg",
+                        cardS: "/svg/card-south.svg",
+                        cardW: "/svg/card-west.svg",
+                        cellTop: "/svg/cell-top.svg",
+                        cellBottomRight: "/svg/cell-bottom-right.svg",
+                        cellBottomLeft: "/svg/cell-bottom-left.svg",
+                        hourglassRed: "/svg/hourglass-red.svg",
+                        hourglassBlack: "/svg/hourglass-black.svg",
+                        background: "/svg/background.svg",
+                        overlay: "/svg/overlay.svg",
+                        nametag: "/svg/nametag.svg"
+                      }
             -- TODO rerenderChan should only change when the maze changes, right now it changes on every server command received
-            let renderedMazeSignal = renderedMaze $ { maze: _, offscreenDims: _, assets: _ } <$> subscribe rerenderChan <*> offscreenDims <*> assets
+            let renderedMazeSignal = renderedMaze $ { maze: _, offscreenDims: _, mAssets: _ } <$> subscribe rerenderChan <*> offscreenDims <*> mAssets
             -- TODO sampleOn animationFrame ?
-            runSignal (render ctx offscreenCanvas <$> offscreenDims <*> screenDims <*> assets <*> realMousePos <*> game))
+            runSignal (render ctx offscreenCanvas <$> offscreenDims <*> screenDims <*> mAssets <*> realMousePos <*> game))
         mcanvas

@@ -9,7 +9,7 @@ import Graphics.Drawing (Drawing, Point, image)
 import Isometric (evalIsoBBox, mapToScreenD)
 import Prelude
 import Signal.DOM (DimensionPair)
-import Types (Assets, AssetName(..), Cell, Cells, Dir, MapPoint (..), ScreenPoint, SpecialTile(..), down, right, special, walls)
+import Types (Assets, AssetName(..), Cell, Cells, Dir, MapPoint (..), ScreenPoint, SpecialTile(..), assetLookup, down, right, special, walls)
 
 -- TODO all these functions should be in the reader monad
 drawCell :: Assets -> DimensionPair -> Cells -> Int -> Int -> Cell -> Drawing
@@ -37,10 +37,10 @@ drawCellWall :: Assets -> DimensionPair -> Cells -> Int -> Int -> Cell -> Drawin
 drawCellWall assets dims maze x y cell =
  let mp x_ y_ = MapPoint { x: x_, y: y_ }
      cellT = mapToScreenD dims (MapPoint {x, y})
- in guard (cell^.walls^.right && not (cell^.walls^.down)) (cellT $ maybe mempty image $ lookup AWallRight assets)
- <> guard (cell^.walls^.down && not (cell^.walls^.right)) (cellT $ maybe mempty image $ lookup AWallDown assets)
- <> guard (cell^.walls^.right && cell^.walls^.down) (cellT $ maybe mempty image $ lookup AWallRightDown assets)
- <> maybe mempty (const (cellT $ maybe mempty image $ lookup AWallNWCorner assets))
+ in guard (cell^.walls^.right && not (cell^.walls^.down)) (cellT $ image $ assetLookup AWallRight assets)
+ <> guard (cell^.walls^.down && not (cell^.walls^.right)) (cellT $ image $ assetLookup AWallDown assets)
+ <> guard (cell^.walls^.right && cell^.walls^.down) (cellT $ image $ assetLookup AWallRightDown assets)
+ <> maybe mempty (const (cellT $ image $ assetLookup AWallNWCorner assets))
       (do eastCell <- lookup (mp (x + 1) y) maze
           guard (eastCell^.walls^.down) (pure unit)
           southCell <- lookup (mp x (y + 1)) maze

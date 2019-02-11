@@ -9,7 +9,6 @@ import Data.Lens (Lens', lens, (^.))
 import Data.Map (Map, lookup)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (class Newtype, unwrap, wrap)
-import Data.Tuple (Tuple)
 import Foreign.Class (class Encode, class Decode)
 import Foreign.Generic (defaultOptions, genericDecode, genericEncode)
 import Graphics.Canvas (CanvasImageSource)
@@ -24,6 +23,57 @@ type Rect  = { x :: Number, y :: Number, w :: Number, h :: Number }
 newtype ScreenPoint = ScreenPoint Point
 newtype MapPoint = MapPoint { x :: Int, y :: Int }
 
+type GAssets v = {
+    playerGreen :: v,
+    playerYellow :: v,
+    playerRed :: v,
+    playerPurple :: v,
+    exploreGreenN :: v,
+    exploreGreenE :: v,
+    exploreGreenS :: v,
+    exploreGreenW :: v,
+    exploreYellowN :: v,
+    exploreYellowE :: v,
+    exploreYellowS :: v,
+    exploreYellowW :: v,
+    exploreRedN :: v,
+    exploreRedE :: v,
+    exploreRedS :: v,
+    exploreRedW :: v,
+    explorePurpleN :: v,
+    explorePurpleE :: v,
+    explorePurpleS :: v,
+    explorePurpleW :: v,
+    wallRight :: v,
+    wallDown :: v,
+    wallRightDown :: v,
+    wallNWCorner :: v,
+    warpGreen :: v,
+    warpYellow :: v,
+    warpRed :: v,
+    warpPurple :: v,
+    exitPurpleN :: v,
+    exitPurpleE :: v,
+    exitPurpleS :: v,
+    exitPurpleW :: v,
+    weaponGreen :: v,
+    weaponYellow :: v,
+    weaponRed :: v,
+    weaponPurple :: v,
+    hourglassRed :: v,
+    hourglassBlack :: v,
+    overlay :: v,
+    cardN :: v,
+    cardE :: v,
+    cardS :: v,
+    cardW :: v,
+    nametag :: v,
+    cellTop :: v,
+    cellBottomRight :: v,
+    cellBottomLeft :: v,
+    background :: v
+  }
+
 data AssetName =
     APlayer PlayerColor
   | AExplore PlayerColor Dir
@@ -32,7 +82,7 @@ data AssetName =
   | AWallRightDown
   | AWallNWCorner
   | AWarp PlayerColor
-  | AExit PlayerColor Dir
+  | AExit Dir -- Eventually this will have a PlayerColor index as well
   | AWeapon PlayerColor
   | AHourglassRed
   | AHourglassBlack
@@ -43,9 +93,58 @@ data AssetName =
   | ACellTop
   | ACellBottomRight
   | ACellBottomLeft
-type Asset = Tuple AssetName (Maybe CanvasImageSource)
--- TODO there should be a non empty map (aka record) version of this. That will remove a *lot* of `maybe mempty image` code snippets
-type Assets = Map AssetName CanvasImageSource
+
+assetLookup :: forall v. AssetName -> GAssets v -> v
+assetLookup (APlayer Green) r = r.playerGreen
+assetLookup (APlayer Yellow) r = r.playerYellow
+assetLookup (APlayer Red) r = r.playerRed
+assetLookup (APlayer Purple) r = r.playerPurple
+assetLookup (AExplore Green N) r = r.exploreGreenN
+assetLookup (AExplore Green E) r = r.exploreGreenE
+assetLookup (AExplore Green S) r = r.exploreGreenS
+assetLookup (AExplore Green W) r = r.exploreGreenW
+assetLookup (AExplore Yellow N) r = r.exploreYellowN
+assetLookup (AExplore Yellow E) r = r.exploreYellowE
+assetLookup (AExplore Yellow S) r = r.exploreYellowS
+assetLookup (AExplore Yellow W) r = r.exploreYellowW
+assetLookup (AExplore Red N) r = r.exploreRedN
+assetLookup (AExplore Red E) r = r.exploreRedE
+assetLookup (AExplore Red S) r = r.exploreRedS
+assetLookup (AExplore Red W) r = r.exploreRedW
+assetLookup (AExplore Purple N) r = r.explorePurpleN
+assetLookup (AExplore Purple E) r = r.explorePurpleE
+assetLookup (AExplore Purple S) r = r.explorePurpleS
+assetLookup (AExplore Purple W) r = r.explorePurpleW
+assetLookup AWallRight r = r.wallRight
+assetLookup AWallDown r = r.wallDown
+assetLookup AWallRightDown r = r.wallRightDown
+assetLookup AWallNWCorner r = r.wallNWCorner
+assetLookup (AWarp Green) r = r.warpGreen
+assetLookup (AWarp Yellow) r = r.warpYellow
+assetLookup (AWarp Red) r = r.warpRed
+assetLookup (AWarp Purple) r = r.warpPurple
+assetLookup (AExit N) r = r.exitPurpleN
+assetLookup (AExit E) r = r.exitPurpleE
+assetLookup (AExit S) r = r.exitPurpleS
+assetLookup (AExit W) r = r.exitPurpleW
+assetLookup (AWeapon Green) r = r.weaponGreen
+assetLookup (AWeapon Yellow) r = r.weaponYellow
+assetLookup (AWeapon Red) r = r.weaponRed
+assetLookup (AWeapon Purple) r = r.weaponPurple
+assetLookup AHourglassRed r = r.hourglassRed
+assetLookup AHourglassBlack r = r.hourglassBlack
+assetLookup AOverlay r = r.overlay
+assetLookup (ACard N) r = r.cardN
+assetLookup (ACard E) r = r.cardE
+assetLookup (ACard S) r = r.cardS
+assetLookup (ACard W) r = r.cardW
+assetLookup ANametag r = r.nametag
+assetLookup ACellTop r = r.cellTop
+assetLookup ACellBottomRight r = r.cellBottomRight
+assetLookup ACellBottomLeft r = r.cellBottomLeft
+assetLookup ABackground r = r.background
+
+type Assets = GAssets CanvasImageSource
 
 newtype DirMap v = DirMap { left :: v, up :: v, right :: v, down :: v }
 data Dir =
@@ -79,8 +178,6 @@ data GameStatus =
   | Won
   | Lost
 
--- TODO nonempty map like dirmap
--- TODO nonempty map for playerpositions (like dirmap)
 type PlayerPositions = Map PlayerColor MapPoint
 type DragState = { playerColor :: PlayerColor, dragPoint :: Point }
 type GameState = {
@@ -326,8 +423,3 @@ instance encodeMapPoint :: Encode MapPoint where
   encode = genericEncode defaultOptions
 instance decodeMapPoint :: Decode MapPoint where
   decode = genericDecode defaultOptions
-
-derive instance eqAssetName :: Eq AssetName
-derive instance ordAssetName :: Ord AssetName
-derive instance genericAssetName :: Generic AssetName _
-instance showAssetName :: Show AssetName where show = genericShow

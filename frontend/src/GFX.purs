@@ -26,20 +26,20 @@ drawCellWeapon col =
 cell :: Assets -> Maybe SpecialTile -> Boolean -> Boolean -> Drawing
 cell _ (Just STUnwalkable) le re = mempty
 cell assets (Just (STExplore col dir)) le re = cell assets Nothing le re <>
-  maybe mempty image (lookup (AExplore col dir) assets)
+  image (assetLookup (AExplore col dir) assets)
 cell assets (Just (STWarp col)) le re = cell assets Nothing le re <>
-  maybe mempty image (lookup (AWarp col) assets)
+  image (assetLookup (AWarp col) assets)
 cell assets (Just (STExit col dir)) le re = cell assets Nothing le re <>
-  maybe mempty image (lookup (AExit col dir) assets)
+  image (assetLookup (AExit dir) assets)
 cell assets (Just (STTimer active)) le re = cell assets Nothing le re <>
-  maybe mempty image (lookup (if active then AHourglassRed else AHourglassBlack) assets)
+  image (assetLookup (if active then AHourglassRed else AHourglassBlack) assets)
 cell assets _ le re =
-    maybe mempty image (lookup ACellTop assets)
- <> translate 0.0 tileHalfHeight (guard le (maybe mempty image $ lookup ACellBottomLeft assets))
- <> translate tileHalfWidth tileHalfHeight (guard re (maybe mempty image $ lookup ACellBottomRight assets))
+    image (assetLookup ACellTop assets)
+ <> translate 0.0 tileHalfHeight (guard le (image $ assetLookup ACellBottomLeft assets))
+ <> translate tileHalfWidth tileHalfHeight (guard re (image $ assetLookup ACellBottomRight assets))
 
 cellWeapon :: Assets -> Maybe SpecialTile -> Drawing
-cellWeapon assets (Just (STWeapon col)) = drawCellWeapon col (maybe mempty image $ lookup (AWeapon col) assets)
+cellWeapon assets (Just (STWeapon col)) = drawCellWeapon col (image $ assetLookup (AWeapon col) assets)
 cellWeapon _ _ = mempty
 
 type Translation = Point
