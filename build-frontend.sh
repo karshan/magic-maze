@@ -1,2 +1,2 @@
 #!/bin/sh
-cd frontend; pulp browserify > ../static/main.js
+cd frontend; pulp browserify -O > ../static/main.js
