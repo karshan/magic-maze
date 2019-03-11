@@ -92,10 +92,7 @@ render ctx offscreenCanvas offscreenDims screenDims mAssets realMouse gameState 
   maybe (D.render ctx $ loading screenDims) (\assets -> do
     let debugText = renderText 100.0 100.0 white 12 (show $ {
           timer: gameState.timer,
-          status: gameState.status,
-          numTilesLeft: (length gameState.tiles :: Int),
-          allowedDir: gameState.allowedDir,
-          clients: gameState.clients
+          touches: Map.keys gameState.touches
         })
     -- TODO draw dragging player first, then in descending order by y coordinate
     let players =

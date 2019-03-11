@@ -1,7 +1,11 @@
-module Signal.Touch (create, TouchEvent_(..)) where
+module Signal.Touch where
 
 import Prelude
-import Data.Maybe (Maybe (..))
+import Data.Array ((..))
+import Data.Foldable (foldMap)
+import Data.Map (Map)
+import Data.Map as Map
+import Data.Maybe (Maybe (..), maybe)
 import Effect (Effect)
 import Signal (Signal)
 import Signal.Channel (channel, send, subscribe)
@@ -9,6 +13,8 @@ import Web.DOM.Document as Doc
 import Web.TouchEvent.EventTypes (touchstart, touchend, touchmove, touchcancel)
 import Web.TouchEvent.TouchEvent (TouchEvent)
 import Web.TouchEvent.TouchEvent as Touch
+import Web.TouchEvent.Touch (Touch, identifier)
+import Web.TouchEvent.TouchList as TL
 import Web.Event.Event (preventDefault)
 import Web.Event.EventTarget (addEventListener, eventListener)
 -- import Web.DOM.Document
@@ -23,6 +29,12 @@ data TouchEvent_ =
   | TouchEnd TouchEvent
   | TouchMove TouchEvent
   | TouchCancel TouchEvent
+
+changedTouches :: TouchEvent -> Map Int Touch
+changedTouches e =
+  let c = Touch.changedTouches e
+      l = TL.length c
+   in foldMap (\i -> maybe Map.empty (\x -> Map.singleton (identifier x) x) $ TL.item i c) (0..l)
 
 create :: EventTarget -> Effect (Signal (Maybe TouchEvent_))
 create target = do

@@ -180,6 +180,7 @@ data GameStatus =
 
 type PlayerPositions = Map PlayerColor MapPoint
 type DragState = { playerColor :: PlayerColor, dragPoint :: Point }
+type TouchState = { pagePoint :: Point, renderOffset :: Point }
 type GameState = {
   maze :: Maze,
   tiles :: Array Tile,
@@ -189,7 +190,8 @@ type GameState = {
   timer :: Int,
   status :: GameStatus,
   allowedDir :: Dir,
-  clients :: Map String Dir
+  clients :: Map String Dir,
+  touches :: Map Int TouchState
   }
 
 -- CLEANUP GameState = { sgs :: ServerGameState } get rid of the duplication. Similar cleanup for Tile and Maze ?

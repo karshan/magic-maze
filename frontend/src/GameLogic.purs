@@ -6,17 +6,19 @@ import Control.Monad.Except (runExcept)
 import Control.Monad.State (State, get, put, runState)
 import Data.Array ((..), (!!), deleteAt)
 import Data.Either (either, note)
-import Data.Foldable (any, fold, foldMap, length, null)
+import Data.Foldable (any, fold, foldl, foldMap, length, null)
 import Data.FoldableWithIndex (foldlWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
+import Data.Int (toNumber)
 import Data.Lens ((^.), (.~), (%~))
+import Data.List (head) as L
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, isNothing, maybe)
 import Data.Maybe.First (First(..))
 import Data.Monoid (guard)
 import Data.Newtype (class Newtype, unwrap)
 import Data.Set as Set
-import Data.Tuple (Tuple(..), fst)
+import Data.Tuple (Tuple(..), fst, snd)
 import Effect (Effect)
 import Effect.Console (log)
 import Foreign (F, ForeignError(..), fail, renderForeignError)
@@ -29,10 +31,12 @@ import Math (floor)
 import Signal.Channel (Channel)
 import Signal.Channel (send) as Chan
 import Signal.DOM (DimensionPair)
+import Signal.Touch
 import Tiles (mergeTiles)
 import Types (C2SCommand(..), Cell, Dir(..), DirMap(..), DragState, Escalator(..), GameState, GameStatus(..), Inputs(..), MapPoint(..), Maze(..), MouseInputs, PlayerColor, PlayerPositions, RealMouseInputs, S2CCommand(..), ScreenPoint(..), SpecialTile(..), borders, cells, down, escalators, forAllCells, right, special, toPoint, walls, serverGameState)
 import Web.Socket.WebSocket as WS
 import Web.UIEvent.WheelEvent (deltaX, deltaY)
+import Web.TouchEvent.Touch (pageX, pageY)
 import Unsafe.Coerce
 
 initialState :: GameState
@@ -45,7 +49,8 @@ initialState = {
       timer: 150,
       status: Started,
       allowedDir: N,
-      clients: Map.empty
+      clients: Map.empty,
+      touches: Map.empty
     }
 
 moveMapPoint :: MapPoint -> Dir -> MapPoint
@@ -326,7 +331,36 @@ gameLogic rerenderChan inputs gameState =
       else
         pure $ gameState { timer = gameState.timer - 1 }
     { inputs: Touch { screenDims, offscreenDims, mTouchEvent }, gameOver: _ } -> do
-      -- TODO
-      maybe (pure unit) (log <<< unsafeCoerce) mTouchEvent
-      pure gameState
+        let touchToPoint t = { x: toNumber (pageX t), y: toNumber (pageY t) }
+        let mkStart t = { pagePoint: touchToPoint t, renderOffset: gameState.renderOffset }
+        maybe (pure unit) (log <<< unsafeCoerce) mTouchEvent
+        case mTouchEvent of
+             (Just (TouchStart e)) -> do
+                if length gameState.touches == 0 then
+                  pure $ gameState { touches = Map.union (map mkStart (changedTouches e)) gameState.touches }
+                 else
+                  pure gameState
+             (Just (TouchEnd e)) -> do
+                let toRemove = Map.keys $ changedTouches e
+                pure $ gameState { touches = foldl (\acc a -> Map.delete a acc) gameState.touches toRemove }
+             (Just (TouchCancel e)) -> do
+                let toRemove = Map.keys $ changedTouches e
+                pure $ gameState { touches = foldl (\acc a -> Map.delete a acc) gameState.touches toRemove }
+             (Just (TouchMove e)) -> do
+                let scalePoint c {x,y} = {x: (x :: Number) * c, y: y * c}
+                let mNewRO = L.head $ Map.values $
+                      Map.intersectionWith
+                        (\a b -> b.renderOffset - (a - b.pagePoint))
+                        (touchToPoint <$> changedTouches e)
+                        gameState.touches
+                pure $ maybe gameState
+                  (\ro -> gameState {
+                      renderOffset =
+                        clipRenderOffset
+                          screenDims
+                          offscreenDims
+                          (gameState.maze^.borders)
+                          ro
+                      }) mNewRO
+             Nothing -> pure gameState
     _ -> pure gameState
