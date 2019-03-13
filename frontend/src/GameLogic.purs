@@ -214,7 +214,7 @@ gameLogicState :: MouseInputs -> State GameState (Tuple (Maybe C2SCommand) Boole
 gameLogicState mouseInputs = do
   gs <- get
   renderOffset <- _.renderOffset <$> get
-  let realMouseI = { offscreenDims: mouseInputs.offscreenDims, ws: mouseInputs.ws, mousePressed: mouseInputs.mousePressed, realMousePos: toPoint mouseInputs.mousePos + renderOffset }
+  let realMouseI = { offscreenDims: mouseInputs.offscreenDims, ws: mouseInputs.ws, mousePressed: mouseInputs.mousePressed, realMousePos: mouseInputs.mousePos + renderOffset }
   explore <- if gs.allowedDir == S then handleExplore realMouseI else pure Nothing
   (Tuple drag shouldReRender) <- handleDrag realMouseI
   pure $ Tuple (unwrap $ First drag <> First explore) shouldReRender
@@ -315,7 +315,7 @@ gameLogic rerenderChan inputs gameState =
           wx = fromMaybe 0.0 (deltaX <$> mWheelEvent)
           wy = fromMaybe 0.0 (deltaY <$> mWheelEvent)
       pure $ gameState { renderOffset = clipRenderOffset screenDims offscreenDims (gameState.maze^.borders)
-                { x: floor $ cx - wx, y: floor $ cy - wy } }
+                { x: floor $ cx + wx, y: floor $ cy + wy } }
     { inputs: ServerMsg mMsg } -> do
       -- TODO error logging
       let (decodedMsg :: F S2CCommand) =

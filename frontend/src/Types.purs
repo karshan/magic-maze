@@ -14,7 +14,7 @@ import Foreign.Generic (defaultOptions, genericDecode, genericEncode)
 import Graphics.Canvas (CanvasImageSource)
 import Graphics.Drawing (Point)
 import Prelude
-import Signal.DOM (DimensionPair, CoordinatePair)
+import Signal.DOM (DimensionPair)
 import Signal.Touch (TouchEvent_)
 import Web.Socket.WebSocket (WebSocket)
 import Web.UIEvent.WheelEvent (WheelEvent)
@@ -206,7 +206,7 @@ newtype ServerGameState = ServerGameState {
 type RealMouseInputs =
   { offscreenDims :: DimensionPair, realMousePos :: Point, mousePressed :: Boolean, ws :: Maybe (WebSocket) }
 type MouseInputs =
-  { offscreenDims :: DimensionPair, mousePos :: CoordinatePair, mousePressed :: Boolean, ws :: Maybe (WebSocket) }
+  { offscreenDims :: DimensionPair, mousePos :: Point, mousePressed :: Boolean, ws :: Maybe (WebSocket) }
 type KeyboardInputs =
   { screenDims :: { w :: Number, h :: Number }, offscreenDims :: DimensionPair, up :: Boolean, down :: Boolean, left :: Boolean, right :: Boolean }
 type MouseWheelInputs =

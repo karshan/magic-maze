@@ -22,7 +22,7 @@ import GFX.Util (renderText)
 import GameLogic (gameLogic, initialState)
 import Graphics.Canvas (CanvasElement, CanvasImageSource, Context2D, getCanvasElementById, getContext2D, setCanvasHeight, setCanvasWidth, tryLoadImage, canvasElementToImageSource)
 import Graphics.Drawing (Drawing, Point, filled, image, lineWidth, outlineColor, outlined, path, rectangle, translate)
-import Graphics.Drawing (fillColor, render) as D
+import Graphics.Drawing (fillColor, render, scale) as D
 import Isometric (mapToScreen, mapToScreenD, tileHalfHeight, tileHalfWidth)
 import Prelude
 import Signal (Signal, sampleOn, runSignal, constant, map2, merge)
@@ -52,6 +52,10 @@ keycodes = DirMap {
         right: 39,
         down: 40
     }
+
+-- TODO zoom signal
+zoom :: Number
+zoom = 2.0
 
 drawPlayer :: DimensionPair -> MapPoint -> Maybe Point -> Point -> CanvasImageSource -> Drawing
 drawPlayer offscreenDims playerPosition mDragPoint realMouse canvasImage =
@@ -107,11 +111,11 @@ render ctx offscreenCanvas offscreenDims screenDims mAssets realMouse gameState 
     let bg = image (assetLookup ABackground assets)
     let scrDims = { w: toNumber screenDims.w, h: toNumber screenDims.h }
     D.render ctx
-      (GFX.background screenDims bg <>
+      (D.scale zoom zoom (GFX.background screenDims bg <>
         (translate (-r.x) (-r.y) (
           image (canvasElementToImageSource offscreenCanvas) <>
           players)) <>
-        debugText <> overlay scrDims gameState assets))
+        debugText <> overlay scrDims gameState assets)))
     mAssets
 
 resize :: CanvasElement -> DimensionPair -> Effect Unit
@@ -141,7 +145,8 @@ main = onDOMContentLoaded do
     screenDims <- windowDimensions
     let scrDims = map (\{ w, h } -> { w: toNumber w, h: toNumber h }) screenDims
     let offscreenDims = constant $ { w: floor tileHalfWidth * 2 * 4 * 9, h: floor tileHalfHeight * 2 * 4 * 9 }
-    mPos <- mousePos
+    mPos_ <- mousePos
+    let mPos = (\{x, y} -> {x: toNumber x/zoom, y: toNumber y/zoom}) <$> mPos_
     mPressed <- mouseButtonPressed MouseLeftButton
     log "creating websocket"
     path <- pathname =<< location =<< window
@@ -172,7 +177,7 @@ main = onDOMContentLoaded do
                     ]
             rerenderChan <- channel initialState.maze
             game <- foldEffect (gameLogic rerenderChan) initialState inputs
-            let realMousePos = map2 (\g m -> g.renderOffset + toPoint m) game mPos
+            let realMousePos = (\g m -> g.renderOffset + m) <$> game <*> mPos
             ctx <- getContext2D canvas
             offscreenCtx <- getContext2D offscreenCanvas
             runSignal (resize canvas <$> screenDims)
