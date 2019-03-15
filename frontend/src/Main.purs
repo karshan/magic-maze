@@ -34,7 +34,7 @@ import Signal.Touch (create) as Touch
 import Signal.Time (every)
 import Signal.WebSocket (create) as WS
 import Types (AssetName(..), GAssets, Assets, DirMap(..), Dir(..), Escalator(..), GameState, Inputs(..), MapPoint, Maze, PlayerColor(..), assetLookup, cells, down, escalators, forAllCells, left, right, toPoint, up)
-import Unsafe.Coerce (unsafeCoerce) -- TODO move to purescript-canvas
+import Unsafe.Coerce (unsafeCoerce) -- TODO(codequality) move to purescript-canvas
 import Web.DOM.Document (createElement)
 import Web.HTML (window)
 import Web.HTML.HTMLDocument (toDocument)
@@ -53,9 +53,9 @@ keycodes = DirMap {
         down: 40
     }
 
--- TODO zoom signal
+-- TODO implement user changeable zoom
 zoom :: Number
-zoom = 2.0
+zoom = 1.0
 
 drawPlayer :: DimensionPair -> MapPoint -> Maybe Point -> Point -> CanvasImageSource -> Drawing
 drawPlayer offscreenDims playerPosition mDragPoint realMouse canvasImage =
@@ -98,7 +98,7 @@ render ctx offscreenCanvas offscreenDims screenDims mAssets realMouse gameState 
           timer: gameState.timer,
           touches: Map.keys gameState.touches
         })
-    -- TODO draw dragging player first, then in descending order by y coordinate
+    -- FIXME draw dragging player first, then in descending order by y coordinate
     let players =
           foldMapWithIndex
             (\pCol pPos ->
@@ -233,8 +233,8 @@ main = onDOMContentLoaded do
                         overlay: "/svg/overlay.svg",
                         nametag: "/svg/nametag.svg"
                       }
-            -- TODO rerenderChan should only change when the maze changes, right now it changes on every server command received
+            -- TODO(codequality) rerenderChan should only change when the maze changes, right now it changes on every server command received
             let renderedMazeSignal = renderedMaze $ { maze: _, offscreenDims: _, mAssets: _ } <$> subscribe rerenderChan <*> offscreenDims <*> mAssets
-            -- TODO sampleOn animationFrame ?
+            -- TODO(minor) sampleOn animationFrame ?
             runSignal (render ctx offscreenCanvas <$> offscreenDims <*> screenDims <*> mAssets <*> realMousePos <*> game))
         mcanvas
