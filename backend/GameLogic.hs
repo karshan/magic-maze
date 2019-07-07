@@ -11,6 +11,7 @@ import Data.Monoid
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Lenses as L
+import Util
 
 weaponsAcquired :: ServerGameState -> Bool
 weaponsAcquired gs = 
@@ -69,11 +70,6 @@ deleteAtH :: [a] -> Int -> [a] -> [a]
 deleteAtH acc _ [] = acc
 deleteAtH acc 0 (x:xs) = (acc ++ xs)
 deleteAtH acc n (x:xs) = deleteAtH (acc ++ [x]) (n - 1) xs
-
-(!!) :: [a] -> Int -> Maybe a
-[] !! _ = Nothing
-(x:xs) !! 0 = Just x
-(x:xs) !! n = xs !! (n - 1)
 
 blockedByWall :: Maze -> MapPoint -> MapPoint -> Dir -> Bool
 blockedByWall maze (MapPoint cx cy) (MapPoint tx ty) dir =

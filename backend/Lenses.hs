@@ -16,3 +16,6 @@ makeFieldsNoPrefix ''Maze
 makeFieldsNoPrefix ''Entrance
 makeFieldsNoPrefix ''Tile
 makeFieldsNoPrefix ''ServerGameState
+
+makeFieldsNoPrefix ''ConnectionState
+makeFieldsNoPrefix ''RoomState

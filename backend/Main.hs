@@ -5,6 +5,7 @@
 {-# LANGUAGE OverloadedStrings      #-}
 {-# LANGUAGE ScopedTypeVariables    #-}
 {-# LANGUAGE TemplateHaskell        #-}
+{-# LANGUAGE PartialTypeSignatures  #-}
 module Main where
 
 import           Control.Lens
@@ -34,83 +35,65 @@ import           GameLogic
 import qualified Lenses                         as L
 import           Types
 import Data.Time.Clock
-
-type ServerState = Map Text (MVar RoomState)
-data ConnectionState = ConnectionState {
-    _connection :: Connection,
-    _allowedDir :: Dir,
-    _lastPong   :: UTCTime
-  }
-data RoomState = RoomState {
-    _connections :: Map Text ConnectionState,
-    _gameState   :: ServerGameState
-  }
-
-makeFieldsNoPrefix ''ConnectionState
-makeFieldsNoPrefix ''RoomState
-
-genName :: IO Text
-genName = do
-    let rand :: [a] -> IO (Maybe a)
-        rand l = (l !!) <$> randomRIO (0, length l - 1)
-        v = [ "a", "e", "i", "o" , "u", "aa", "ee", "oo" ]
-        c = [ "b", "c", "ch", "d", "f", "ph", "g", "h", "gh", "j", "k", "l", "m", "n", "p", "q", "r", "s", "t", "th", "v", "w", "x", "y", "z" ]
-    toS . concat . catMaybes <$> mapM rand [ c, v, c, v, c, v, c ]
+import Util
 
 -- TODO check if randomName already exists ?
+-- TODO remainingDirs more lens foo cleanup
+-- TODO last return line, TupleSections ?
 addClient :: MVar RoomState -> PendingConnection -> IO (Maybe (Text, Dir), Connection)
 addClient mv pendingConn = do
     name <- genName
     let updatePongTime :: RoomState -> IO RoomState
         updatePongTime roomState = do
             t <- getCurrentTime
-            return $ roomState & connections %~ (Map.adjust (lastPong .~ t) name)
-    conn <- acceptRequest (pendingConn { pendingOptions =
-                (pendingOptions pendingConn)
-                { connectionOnPong = modifyMVar_ mv updatePongTime } })
+            return $ roomState & L.connections %~ (Map.adjust (L.lastPong .~ t) name)
+    conn <- acceptRequest' pendingConn (modifyMVar_ mv updatePongTime)
     mDir <- modifyMVar mv
         (\roomState ->
-            if length (roomState ^. connections) >= 4 then
+            if length (roomState ^. L.connections) >= 4 then
                 return (roomState, Nothing)
             else do
-                let remainingDirs = Set.fromList [ N, E, S, W ] \\ Set.fromList (map (view allowedDir) $ Map.elems $ roomState ^. connections)
-                randomDir <- fromMaybe N . ([N, E, S, W] !!) . (`mod` 4) <$> randomIO
-                dir <- fromMaybe randomDir . ((Set.toList remainingDirs) !!) . (`mod` length remainingDirs) <$> randomIO
+                let remainingDirs = Set.fromList [ N, E, S, W ] \\
+                      Set.fromList (map (view L.allowedDir) $ roomState ^. L.connections ^.. each)
+                dir <- fromMaybe impossible <$> randomList (Set.toList remainingDirs)
                 curTime <- getCurrentTime
-                return $ (roomState & connections %~ (Map.insert name (ConnectionState conn dir curTime)), Just dir))
-    return $ maybe (Nothing, conn) (\dir -> (Just (name, dir), conn)) mDir
+                let newConnState = ConnectionState conn dir curTime
+                return $ (roomState & L.connections %~ (Map.insert name newConnState), Just dir))
+    return $ ((\dir -> (name, dir)) <$> mDir, conn)
 
 removeClient :: MVar RoomState -> Text -> IO ()
-removeClient mv name = modifyMVar_ mv (return . over connections (Map.delete name))
+removeClient mv name = modifyMVar_ mv (return . over L.connections (Map.delete name))
 
 broadcast :: MVar RoomState -> Text -> IO ()
 broadcast mv msg = do
     putText $ "broadcasting " <> msg
-    mapM_ (flip sendTextData msg . view connection) . view connections =<< readMVar mv
+    mapM_ (flip sendTextData msg . view L.connection) . view L.connections =<< readMVar mv
 
 broadcastExcept :: Text -> MVar RoomState -> Text -> IO ()
 broadcastExcept name mv msg = do
     putText $ "broadcasting " <> msg
-    mapM_ (flip sendTextData msg . view connection) . Map.filterWithKey (\k _ -> k /= name) . view connections =<< readMVar mv
+    mapM_ (flip sendTextData msg . view L.connection) .
+        Map.filterWithKey (\k _ -> k /= name) . view L.connections =<< readMVar mv
 
 tickThread :: MVar RoomState -> IO ()
 tickThread roomStateMV = forever $ do
     threadDelay 1000000
     modifyMVar_ roomStateMV
         (\roomState ->
-            if roomState ^. gameState.L.timer <= 1 then
-                return $ roomState & gameState.L.timer .~ 0 & gameState.L.status .~ Lost
+            if roomState ^. L.gameState.L.timer <= 1 then
+                return $ roomState & L.gameState.L.timer .~ 0 & L.gameState.L.status .~ Lost
             else
-                return $ roomState & gameState.L.timer %~ (\x -> x - 1))
+                return $ roomState & L.gameState.L.timer %~ (\x -> x - 1))
 
+-- broadcast the list of currently connected clients
 broadcastClients :: MVar RoomState -> IO ()
 broadcastClients roomStateMV = do
-    -- let encodeClients r name = toS . encode . SSetClients . Map.filterWithKey (\k _ -> k /= name) $ (r ^. allowedDirs)
+    let msg :: RoomState -> Text -> LByteString
+        msg rState name = encode . SSetClients . map (view L.allowedDir) .
+            Map.filterWithKey (\k _ -> k /= name) $ (rState ^. L.connections)
     roomState <- readMVar roomStateMV
-    mapM_ (\(n, connState) ->
-                sendTextData (connState ^. connection) $
-                    encode $ SSetClients $ map (view allowedDir) $ Map.filterWithKey (\k _ -> k /= n) $ roomState ^. connections)
-        (Map.toList $ roomState ^. connections)
+    mapM_ (\(n, connState) -> sendTextData (connState ^. L.connection) $ msg roomState n)
+        (Map.toList $ roomState ^. L.connections)
 
 -- FIXME keepAlive ping, and SetState when client comes to life after being dead
 -- FIXME kill rooms after game is won/lost
@@ -138,7 +121,7 @@ main = do
                 (\(name, allowedDir) -> do
                     sendTextData conn (encode $ SSetAllowedDir allowedDir)
                     broadcastClients roomStateMV
-                    gameStateAtConn <- view gameState <$> readMVar roomStateMV
+                    gameStateAtConn <- view L.gameState <$> readMVar roomStateMV
                     sendTextData conn (encode (SSetState gameStateAtConn))
                     (flip finally
                         (do
@@ -149,7 +132,7 @@ main = do
                             (a :: Text) <- receiveData conn
                             let eCommand = (eitherDecode (toS a) :: Either String C2SCommand)
                             print eCommand
-                            status <- view (gameState.L.status) <$> readMVar roomStateMV
+                            status <- view (L.gameState.L.status) <$> readMVar roomStateMV
                             if status == Lost || status == Won then
                                 sendClose conn ("" :: Text)
                             else
@@ -158,8 +141,8 @@ main = do
                                         mCommandToSend <- modifyMVar roomStateMV
                                             (\roomState -> do
                                                 (newGameState, mCommandToSend) <-
-                                                        evalRandIO (evalCommand command allowedDir (roomState ^. gameState))
-                                                return (roomState & gameState .~ newGameState, mCommandToSend))
+                                                        evalRandIO (evalCommand command allowedDir (roomState ^. L.gameState))
+                                                return (roomState & L.gameState .~ newGameState, mCommandToSend))
                                         maybe (return ())
                                             (\commandToSend ->
                                                 let brdcst = case commandToSend of

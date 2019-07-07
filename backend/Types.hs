@@ -8,6 +8,19 @@ import Data.Aeson.TH
 import Data.Set (Set)
 import PSBridge
 import Protolude
+import Network.WebSockets.Connection (Connection)
+import Data.Time.Clock (UTCTime)
+
+type ServerState = Map Text (MVar RoomState)
+data ConnectionState = ConnectionState {
+    _connection :: Connection,
+    _allowedDir :: Dir,
+    _lastPong   :: UTCTime
+  }
+data RoomState = RoomState {
+    _connections :: Map Text ConnectionState,
+    _gameState   :: ServerGameState
+  }
 
 data C2SCommand =
     CPlayerMove PlayerColor MapPoint MapPoint -- From To
