@@ -120,37 +120,37 @@ wsApp serverStateMV pendingConn = do
     (mNameDir, conn) <- addClient roomStateMV pendingConn
     mNameDir & maybe (sendTextData conn (encode SRoomFull) >> sendClose conn ("" :: Text))
         (\(name, allowedDir) -> do
-    sendTextData conn (encode $ SSetAllowedDir allowedDir)
-    broadcastClients roomStateMV
-    sendTextData conn . encode . SSetState =<< view L.gameState <$> readMVar roomStateMV
-    (flip finally
-        (do
-            removeClient roomStateMV name
-            broadcastClients roomStateMV) $ do
-    forkPingThread conn 30
-    forever $ do
-        (a :: Text) <- receiveData conn
-        let eCommand = (eitherDecode (toS a) :: Either String C2SCommand)
-        print eCommand
-        status <- view (L.gameState.L.status) <$> readMVar roomStateMV
-        if status == Lost || status == Won then
-            sendClose conn ("" :: Text)
-        else
-            either (const $ return ()) -- TODO force client code refresh?
-                (\command -> do
-                    mCommandToSend <- modifyMVar roomStateMV
-                        (\roomState -> do
-                            (newGameState, mCommandToSend) <-
-                                    evalRandIO (evalCommand command allowedDir (roomState ^. L.gameState))
-                            return (roomState & L.gameState .~ newGameState, mCommandToSend))
-                    maybe (return ())
-                        (\commandToSend ->
-                            let brdcst = case commandToSend of
-                                    SPlayerMove _ _ -> broadcastExcept name
-                                    _ -> broadcast
-                            in brdcst roomStateMV $ toS $ encode commandToSend)
-                        mCommandToSend)
-                eCommand))
+            sendTextData conn (encode $ SSetAllowedDir allowedDir)
+            broadcastClients roomStateMV
+            sendTextData conn . encode . SSetState =<< view L.gameState <$> readMVar roomStateMV
+            (flip finally
+                (do
+                    removeClient roomStateMV name
+                    broadcastClients roomStateMV) $ do
+                forkPingThread conn 30
+                forever $ do
+                    (a :: Text) <- receiveData conn
+                    let eCommand = (eitherDecode (toS a) :: Either String C2SCommand)
+                    print eCommand
+                    status <- view (L.gameState.L.status) <$> readMVar roomStateMV
+                    if status == Lost || status == Won then
+                        sendClose conn ("" :: Text)
+                    else
+                        either (const $ return ()) -- TODO force client code refresh?
+                            (\command -> do
+                                mCommandToSend <- modifyMVar roomStateMV
+                                    (\roomState -> do
+                                        (newGameState, mCommandToSend) <-
+                                                evalRandIO (evalCommand command allowedDir (roomState ^. L.gameState))
+                                        return (roomState & L.gameState .~ newGameState, mCommandToSend))
+                                maybe (return ())
+                                    (\commandToSend ->
+                                        let brdcst = case commandToSend of
+                                                SPlayerMove _ _ -> broadcastExcept name
+                                                _ -> broadcast
+                                        in brdcst roomStateMV $ toS $ encode commandToSend)
+                                    mCommandToSend)
+                            eCommand))
 
 backupApp :: Application
 backupApp request f =
