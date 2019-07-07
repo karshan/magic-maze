@@ -102,57 +102,58 @@ main = do
     Just port <- (readMaybe <=< head) <$> getArgs
     serverStateMV <- newMVar Map.empty
     run port (websocketsOr defaultConnectionOptions (wsApp serverStateMV) backupApp)
-    where
-        wsApp :: MVar ServerState -> PendingConnection -> IO ()
-        wsApp serverStateMV pendingConn = do
-            let path = toS $ requestPath (pendingRequest pendingConn)
-            roomStateMV <- modifyMVar serverStateMV
-                (\serverState ->
-                    maybe
-                        (do
-                            newRoomStateMV <- newMVar (RoomState Map.empty initialState)
-                            void $ forkIO (tickThread newRoomStateMV)
-                            return (Map.insert path newRoomStateMV serverState, newRoomStateMV))
-                        (\existingRoomStateMV -> return (serverState, existingRoomStateMV))
-                        (Map.lookup path serverState))
-            (mNameDir, conn) <- addClient roomStateMV pendingConn
+
+wsApp :: MVar ServerState -> PendingConnection -> IO ()
+wsApp serverStateMV pendingConn = do
+    let path = toS $ requestPath (pendingRequest pendingConn)
+
+    -- Get existing roomStateMV or create a new one
+    roomStateMV <- modifyMVar serverStateMV
+        (\serverState ->
             maybe
-                (sendTextData conn (encode SRoomFull) >> sendClose conn ("" :: Text))
-                (\(name, allowedDir) -> do
-                    sendTextData conn (encode $ SSetAllowedDir allowedDir)
-                    broadcastClients roomStateMV
-                    gameStateAtConn <- view L.gameState <$> readMVar roomStateMV
-                    sendTextData conn (encode (SSetState gameStateAtConn))
-                    (flip finally
-                        (do
-                            removeClient roomStateMV name
-                            broadcastClients roomStateMV) $ do
-                        forkPingThread conn 30
-                        forever $ do
-                            (a :: Text) <- receiveData conn
-                            let eCommand = (eitherDecode (toS a) :: Either String C2SCommand)
-                            print eCommand
-                            status <- view (L.gameState.L.status) <$> readMVar roomStateMV
-                            if status == Lost || status == Won then
-                                sendClose conn ("" :: Text)
-                            else
-                                either (const $ return ())
-                                    (\command -> do
-                                        mCommandToSend <- modifyMVar roomStateMV
-                                            (\roomState -> do
-                                                (newGameState, mCommandToSend) <-
-                                                        evalRandIO (evalCommand command allowedDir (roomState ^. L.gameState))
-                                                return (roomState & L.gameState .~ newGameState, mCommandToSend))
-                                        maybe (return ())
-                                            (\commandToSend ->
-                                                let brdcst = case commandToSend of
-                                                        SPlayerMove _ _ -> broadcastExcept name
-                                                        _ -> broadcast
-                                                in brdcst roomStateMV $ toS $ encode commandToSend)
-                                            mCommandToSend)
-                                    eCommand))
-                mNameDir
-        redir req = if "." `T.isInfixOf` T.concat (pathInfo req) then req else req { pathInfo = [ "index.html" ] }
-        backupApp :: Application
-        backupApp request f =
-            staticApp ((defaultWebAppSettings "static") { ssMaxAge = MaxAgeSeconds 0 }) (redir request) f
+                (do
+                    newRoomStateMV <- newMVar (RoomState Map.empty initialState)
+                    void $ forkIO (tickThread newRoomStateMV)
+                    return (Map.insert path newRoomStateMV serverState, newRoomStateMV))
+                (\existingRoomStateMV -> return (serverState, existingRoomStateMV))
+                (Map.lookup path serverState))
+    (mNameDir, conn) <- addClient roomStateMV pendingConn
+    mNameDir & maybe (sendTextData conn (encode SRoomFull) >> sendClose conn ("" :: Text))
+        (\(name, allowedDir) -> do
+    sendTextData conn (encode $ SSetAllowedDir allowedDir)
+    broadcastClients roomStateMV
+    sendTextData conn . encode . SSetState =<< view L.gameState <$> readMVar roomStateMV
+    (flip finally
+        (do
+            removeClient roomStateMV name
+            broadcastClients roomStateMV) $ do
+    forkPingThread conn 30
+    forever $ do
+        (a :: Text) <- receiveData conn
+        let eCommand = (eitherDecode (toS a) :: Either String C2SCommand)
+        print eCommand
+        status <- view (L.gameState.L.status) <$> readMVar roomStateMV
+        if status == Lost || status == Won then
+            sendClose conn ("" :: Text)
+        else
+            either (const $ return ()) -- TODO force client code refresh?
+                (\command -> do
+                    mCommandToSend <- modifyMVar roomStateMV
+                        (\roomState -> do
+                            (newGameState, mCommandToSend) <-
+                                    evalRandIO (evalCommand command allowedDir (roomState ^. L.gameState))
+                            return (roomState & L.gameState .~ newGameState, mCommandToSend))
+                    maybe (return ())
+                        (\commandToSend ->
+                            let brdcst = case commandToSend of
+                                    SPlayerMove _ _ -> broadcastExcept name
+                                    _ -> broadcast
+                            in brdcst roomStateMV $ toS $ encode commandToSend)
+                        mCommandToSend)
+                eCommand))
+
+backupApp :: Application
+backupApp request f =
+    staticApp ((defaultWebAppSettings "static") { ssMaxAge = MaxAgeSeconds 0 }) (redir request) f
+        where
+            redir req = if "." `T.isInfixOf` T.concat (pathInfo req) then req else req { pathInfo = [ "index.html" ] }

@@ -29,31 +29,28 @@ evalCommand (CPlayerMove pCol from to) allowedDir sgs =
     if isValidMove pCol to allowedDir sgs then do
         let serverCommand = SPlayerMove pCol to
             newGameState = sgs & over L.players (Map.adjust (const to) pCol)
-        maybe
-            (return (newGameState, Just serverCommand))
-            (\cell ->
-                case cell ^. L.special of
-                    Just (STTimer True) ->
-                        return (newGameState &
-                            L.maze.L.cells %~ 
-                                (Map.adjust (L.special .~ (Just $ STTimer False)) to) &
-                            L.timer %~ (150 -), Just serverCommand)
-                    Just (STWeapon _) ->
-                        if weaponsAcquired newGameState then
-                            return (newGameState & L.status .~ WeaponsAcquired, Just serverCommand)
-                        else
-                            return (newGameState, Just serverCommand)
-                    Just (STExit _ _) ->
-                        if newGameState ^. L.status == WeaponsAcquired then
-                            if length (newGameState ^. L.players) <= 1 then
-                                return (newGameState & L.status .~ Won & L.players .~ Map.empty, Just serverCommand)
-                            else
-                                return (newGameState & L.players %~ (Map.delete pCol), Just serverCommand)
-                        else
-                            return (newGameState, Just serverCommand)
-                    _ ->
-                        return (newGameState, Just serverCommand))
-            (Map.lookup to (newGameState ^. L.maze.L.cells))
+            cell = fromMaybe impossible $ Map.lookup to (newGameState ^. L.maze.L.cells)
+        case cell ^. L.special of
+            Just (STTimer True) ->
+                return (newGameState &
+                    L.maze.L.cells %~ 
+                        (Map.adjust (L.special .~ (Just $ STTimer False)) to) &
+                    L.timer %~ (150 -), Just serverCommand)
+            Just (STWeapon _) ->
+                if weaponsAcquired newGameState then
+                    return (newGameState & L.status .~ WeaponsAcquired, Just serverCommand)
+                else
+                    return (newGameState, Just serverCommand)
+            Just (STExit _ _) ->
+                if newGameState ^. L.status == WeaponsAcquired then
+                    if length (newGameState ^. L.players) <= 1 then
+                        return (newGameState & L.status .~ Won & L.players .~ Map.empty, Just serverCommand)
+                    else
+                        return (newGameState & L.players %~ (Map.delete pCol), Just serverCommand)
+                else
+                    return (newGameState, Just serverCommand)
+            _ ->
+                return (newGameState, Just serverCommand)
     else
         return (sgs, SPlayerMove pCol <$> (Map.lookup pCol (sgs ^. L.players)))
 evalCommand (CExplore mp dir) S sgs = do
