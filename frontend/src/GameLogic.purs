@@ -33,7 +33,7 @@ import Signal.Channel (send) as Chan
 import Signal.DOM (DimensionPair)
 import Signal.Touch
 import Tiles (mergeTiles)
-import Types (C2SCommand(..), Cell, Dir(..), DirMap(..), DragState, Escalator(..), GameState, GameStatus(..), Inputs(..), MapPoint(..), Maze(..), MouseInputs, PlayerColor, PlayerPositions, RealMouseInputs, S2CCommand(..), ScreenPoint(..), SpecialTile(..), borders, cells, down, escalators, forAllCells, right, special, toPoint, walls, serverGameState)
+import Types (C2SCommand(..), Cell, Dir(..), DirMap(..), DragState, Escalator(..), GameState, GameStatus(..), Inputs(..), MapPoint(..), Maze(..), MouseInputs, PlayerColor, PlayerPositions, RealMouseInputs, S2CCommand(..), ScreenPoint(..), SpecialTile(..), borders, cells, down, escalators, forAllCells, right, special, toPoint, walls, serverGameState, wepacq)
 import Web.Socket.WebSocket as WS
 import Web.UIEvent.WheelEvent (deltaX, deltaY)
 import Web.TouchEvent.Touch (pageX, pageY)
@@ -41,7 +41,7 @@ import Unsafe.Coerce
 
 initialState :: GameState
 initialState = {
-      maze: Maze { cells: Map.empty, borders: DirMap { left: 0, right: 0, up: 0, down: 0 }, escalators: [] },
+      maze: Maze { cells: Map.empty, borders: DirMap { left: 0, right: 0, up: 0, down: 0 }, escalators: [], wepacq: false },
       tiles: [],
       players: Map.empty,
       dragging: Nothing,
@@ -129,7 +129,7 @@ evalServerCommand (SExplore nextTile mp dir) gs =
 evalServerCommand (SSetState sgs) gs = gs # serverGameState .~ sgs
 evalServerCommand (SSetAllowedDir dir) gs = gs { allowedDir = dir }
 evalServerCommand (SSetClients clients) gs = gs { clients = clients }
-evalServerCommand SRoomFull gs = gs { status = Lost }
+evalServerCommand SRoomFull gs = gs { status = RoomFull }
 
 newtype All = All Boolean
 derive instance newtypeAll :: Newtype All _
@@ -159,7 +159,7 @@ evalArriveAtSpecialCell pCol targetPos gs =
                     }) true
            Just (STWeapon _) ->
               if weaponsAcquired gs then
-                Tuple (gs { status = WeaponsAcquired }) false
+                Tuple (gs { status = WeaponsAcquired, maze = (wepacq .~ true) gs.maze }) true
               else
                 Tuple gs false
            Just (STExit _ _) ->
@@ -282,7 +282,7 @@ clipRenderOffset scrDims offscreenDims (DirMap { up, down, left, right }) { x: c
    in { x: clip curX (sLeft - scrDims.w) (sRight), y: clip curY (sUp - scrDims.h) (sDown) }
 
 gameOver :: GameState -> Boolean
-gameOver gs = gs.status == Lost || gs.status == Won
+gameOver gs = gs.status == Lost || gs.status == Won || gs.status == Waiting || gs.status == RoomFull
 
 gameLogic :: Channel Maze -> Inputs -> GameState -> Effect GameState
 gameLogic rerenderChan inputs gameState =

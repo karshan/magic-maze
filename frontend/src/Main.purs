@@ -33,7 +33,7 @@ import Signal.MouseWheel (create) as Wheel
 import Signal.Touch (create) as Touch
 import Signal.Time (every)
 import Signal.WebSocket (create) as WS
-import Types (AssetName(..), GAssets, Assets, DirMap(..), Dir(..), Escalator(..), GameState, GameStatus(..), Inputs(..), MapPoint, Maze, PlayerColor(..), assetLookup, cells, down, escalators, forAllCells, left, right, toPoint, up)
+import Types (AssetName(..), GAssets, Assets, DirMap(..), Dir(..), Escalator(..), GameState, GameStatus(..), Inputs(..), MapPoint, Maze, PlayerColor(..), assetLookup, cells, down, escalators, forAllCells, left, right, toPoint, up, wepacq)
 import Unsafe.Coerce (unsafeCoerce) -- TODO(codequality) move to purescript-canvas
 import Web.DOM.Document (createElement)
 import Web.HTML (window)
@@ -82,9 +82,8 @@ renderMaze ctx { maze, offscreenDims, mAssets } =
     let rweapons = forAllCells maze (drawCellWeapon assets offscreenDims (maze^.cells))
     let rescalators = foldMap (\(Escalator mp1 mp2) -> drawEscalator offscreenDims mp1 mp2) (maze^.escalators)
     -- We translate the cell and walls so that Isometric.mapToScreen maps to the NW corner of the tile
-    D.render ctx ((translate (-tileHalfWidth) 0.0 (rcells <> rwalls)) <> rescalators <> rweapons))
+    D.render ctx ((translate (-tileHalfWidth) 0.0 (rcells <> rwalls)) <> rescalators <> (if maze^.wepacq == false then rweapons else mempty)))
     mAssets
-
 
 loading :: DimensionPair -> Drawing
 loading screenDims =
@@ -94,12 +93,14 @@ loading screenDims =
 render :: Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Maybe Assets -> Point -> GameState -> Effect Unit
 render ctx offscreenCanvas offscreenDims screenDims mAssets realMouse gameState =
   maybe (D.render ctx $ loading screenDims) (\assets -> do
-    if gameState.status == Waiting then
+    if gameState.status == Waiting then do
+      let scrDims = { w: toNumber screenDims.w, h: toNumber screenDims.h }
       D.render ctx $ GFX.background screenDims (image $ assetLookup ABackground assets) <>
-        renderText (toNumber screenDims.w/2.0) (toNumber screenDims.h/2.0) white 18 "Waiting for players"
+        renderText (toNumber screenDims.w * 0.45) (toNumber screenDims.h/2.0) white 18 "Waiting for players" <> overlay false scrDims gameState assets
      else do
       let debugText = renderText 100.0 100.0 white 12 (show $ {
             timer: gameState.timer,
+            status: gameState.status,
             touches: Map.keys gameState.touches
           })
       -- FIXME draw dragging player first, then in descending order by y coordinate
@@ -119,7 +120,7 @@ render ctx offscreenCanvas offscreenDims screenDims mAssets realMouse gameState 
           (translate (-r.x) (-r.y) (
             image (canvasElementToImageSource offscreenCanvas) <>
             players)) <>
-          debugText <> overlay scrDims gameState assets)))
+          overlay true scrDims gameState assets)))
     mAssets
 
 resize :: CanvasElement -> DimensionPair -> Effect Unit

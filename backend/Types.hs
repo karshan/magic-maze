@@ -74,7 +74,7 @@ data SpecialTile =
 
 type Cells = Map MapPoint Cell
 data Escalator = Escalator MapPoint MapPoint deriving (Eq, Ord, Show)
-data Maze = Maze { _cells :: Cells, _borders :: DirMap Int, _escalators :: Set Escalator } deriving (Eq, Ord, Show)
+data Maze = Maze { _cells :: Cells, _borders :: DirMap Int, _escalators :: Set Escalator, _wepacq :: Bool } deriving (Eq, Ord, Show)
 data Entrance = Entrance { _side :: Dir, _offset :: Int } deriving (Eq, Ord, Show)
 data Tile = Tile { _cells :: Cells, _entrance :: Entrance, _escalators :: Set Escalator } deriving (Eq, Ord, Show)
 data Walls = Walls { _right :: Bool, _down :: Bool } deriving (Eq, Ord, Show)

@@ -169,7 +169,7 @@ newtype Cell = Cell { walls :: Walls, special :: Maybe SpecialTile }
 type Cells = Map MapPoint Cell
 
 -- TODO Set Escalator after adding Encode (Set v)
-newtype Maze = Maze { cells :: Cells, borders :: DirMap Int, escalators :: Array Escalator }
+newtype Maze = Maze { cells :: Cells, borders :: DirMap Int, escalators :: Array Escalator, wepacq :: Boolean }
 newtype Tile = Tile { cells :: Cells, entrance :: Entrance, escalators :: Array Escalator }
 
 data GameStatus =
@@ -178,6 +178,7 @@ data GameStatus =
   | WeaponsAcquired
   | Won
   | Lost
+  | RoomFull
 
 type PlayerPositions = Map PlayerColor MapPoint
 type DragState = { playerColor :: PlayerColor, dragPoint :: Point }
@@ -283,6 +284,9 @@ down = lens (_.down <<< unwrap) $ \s b -> wrap $ _ { down = b } $ unwrap s
 
 cells :: forall n r. Newtype n { cells :: Cells | r } => Lens' n Cells
 cells = lens (_.cells <<< unwrap) $ \s b -> wrap $ _ { cells = b } $ unwrap s
+
+wepacq :: forall n r. Newtype n { wepacq :: Boolean | r } => Lens' n Boolean
+wepacq = lens (_.wepacq <<< unwrap) $ \s b -> wrap $ _ { wepacq = b } $ unwrap s
 
 borders :: Lens' Maze (DirMap Int)
 borders = lens (_.borders <<< unwrap) $ \s b -> wrap $ _ { borders = b } $ unwrap s

@@ -18,8 +18,8 @@ card assets d = image (assetLookup (ACard d) assets)
 
 -- when implementing zoom, this function needs to change
 -- TODO(codequality) somehow change this so we can import this from figma essentially
-overlay :: { w :: Number, h :: Number } -> GameState -> Assets -> Drawing
-overlay scrDims gameState assets =
+overlay :: Boolean -> { w :: Number, h :: Number } -> GameState -> Assets -> Drawing
+overlay showTimer scrDims gameState assets =
   let overlayDims = { w: 1479.0, h: 283.0 }
       overlayScale = clip (scrDims.w/overlayDims.w) 0.0 0.5
       overlayTranslate = translate ((scrDims.w - (overlayDims.w * overlayScale))/2.0)
@@ -27,10 +27,10 @@ overlay scrDims gameState assets =
       playerCardT = translate (997.0 * overlayScale) (80.0 * overlayScale) <<< overlayTranslate <<<
                       scale (2.0 * overlayScale) (2.0 * overlayScale)
       otherCardT n = translate ((997.0 - ((toNumber (n + 1)) * 250.0)) * overlayScale) (80.0 * overlayScale) <<< overlayTranslate <<<
-                      scale (1.7 * overlayScale) (1.7 * overlayScale)
+                      scale (1.2 * overlayScale) (1.2 * overlayScale)
       rcard = playerCardT $ card assets gameState.allowedDir
       othercards = foldMapWithIndex (\i -> otherCardT i) $ Map.values $ map (card assets) gameState.clients
       overl = (overlayTranslate $ scale overlayScale overlayScale $ image (assetLookup AOverlay assets)) <> rcard <> othercards
-      gameOverOverlay = if gameState.status == Won || gameState.status == Lost then (filled (fillColor (rgba 0 0 0 0.3)) $ rectangle 0.0 0.0 scrDims.w scrDims.h) <> renderText (scrDims.w/2.0) (scrDims.h/2.0) white 20 (show gameState.status) else mempty
+      gameOverOverlay = if gameState.status == Won || gameState.status == Lost || gameState.status == RoomFull then (filled (fillColor (rgba 0 0 0 0.3)) $ rectangle 0.0 0.0 scrDims.w scrDims.h) <> renderText (scrDims.w/2.0) (scrDims.h/2.0) white 20 (show gameState.status) else mempty
       timer = translate (50.0 * overlayScale) (250.0 * overlayScale) $ overlayTranslate $ renderText 0.0 0.0 white 20 (show gameState.timer)
-  in overl <> timer <> gameOverOverlay
+  in overl <> (if showTimer then timer else mempty) <> gameOverOverlay

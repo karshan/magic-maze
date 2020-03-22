@@ -53,7 +53,8 @@ initialTile =
         _up = 0,
         _right = 3,
         _down = 3
-      }
+      },
+      _wepacq = False
     }
 
 tiles :: [Tile]

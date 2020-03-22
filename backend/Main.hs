@@ -65,10 +65,9 @@ addClient mv pendingConn = do
         void $ forkIO (tickThread mv)
         roomState <- readMVar mv
         broadcast mv (toS $ encode $ SSetState (roomState ^. L.gameState)) -- FIXME s/SSetState/SStarted/g
-        return ()
+        return $ ((\dir -> (name, dir)) <$> mDir, conn)
     else
-        return ()
-    return $ ((\dir -> (name, dir)) <$> mDir, conn)
+        return $ ((\dir -> (name, dir)) <$> mDir, conn)
 
 removeClient :: MVar RoomState -> Text -> IO Bool -- 0 clients remain
 removeClient mv name =
@@ -140,6 +139,7 @@ wsApp serverStateMV pendingConn = do
         (\(name, allowedDir) -> do
             sendTextData conn (encode $ SSetAllowedDir allowedDir)
             broadcastClients roomStateMV
+            modifyMVar_ roomStateMV (\rs -> return (rs & L.gameState.L.maze.L.wepacq .~ (rs ^. L.gameState.L.status == WeaponsAcquired)))
             sendTextData conn . encode . SSetState =<< view L.gameState <$> readMVar roomStateMV
             (flip finally
                 (do
@@ -183,7 +183,7 @@ backupApp serverStateMV request f =
                 (Map.elems (Map.mapWithKey
                     (\r roomStateMV -> do
                         rs <- readMVar roomStateMV
-                        if length (rs ^. L.connections) >= 4 then
+                        if rs ^. L.gameState.L.status /= Waiting then
                             return Nothing
                         else
                             return $ Just $ "<div><a href=\"https://maze.karshan.me" <> r <> "\">" <> r <> "</a> " <> show (length (rs ^. L.connections)) <>  "/4</div>")
