@@ -81,7 +81,8 @@ data Walls = Walls { _right :: Bool, _down :: Bool } deriving (Eq, Ord, Show)
 data Cell = Cell { _walls :: Walls, _special :: Maybe SpecialTile } deriving (Eq, Ord, Show)
 
 data GameStatus =
-    Started
+    Waiting
+  | Started
   | WeaponsAcquired
   | Won
   | Lost

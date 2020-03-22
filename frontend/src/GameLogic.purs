@@ -47,7 +47,7 @@ initialState = {
       dragging: Nothing,
       renderOffset: { x: 1715.0, y: 840.0 }, -- TODO calculate from offscreenDims
       timer: 150,
-      status: Started,
+      status: Waiting,
       allowedDir: N,
       clients: Map.empty,
       touches: Map.empty

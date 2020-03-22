@@ -1,6 +1,6 @@
 #!/bin/sh
 while [ 1 ]; do
-  ./magic-maze-backend 3105 &
+  ./magic-maze-backend 3007 &
   PID=$!
   inotifywait -e MODIFY $(find backend -name "*.hs")
   stack build --copy-bins

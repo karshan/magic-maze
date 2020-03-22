@@ -18,7 +18,7 @@ initialState = ServerGameState {
         (Purple, (MapPoint 2 2))
       ],
       _timer = 150,
-      _status = Started
+      _status = Waiting
     }
 
 initialTile :: Maze

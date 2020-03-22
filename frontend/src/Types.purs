@@ -173,7 +173,8 @@ newtype Maze = Maze { cells :: Cells, borders :: DirMap Int, escalators :: Array
 newtype Tile = Tile { cells :: Cells, entrance :: Entrance, escalators :: Array Escalator }
 
 data GameStatus =
-    Started
+    Waiting
+  | Started
   | WeaponsAcquired
   | Won
   | Lost

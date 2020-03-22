@@ -33,7 +33,7 @@ import Signal.MouseWheel (create) as Wheel
 import Signal.Touch (create) as Touch
 import Signal.Time (every)
 import Signal.WebSocket (create) as WS
-import Types (AssetName(..), GAssets, Assets, DirMap(..), Dir(..), Escalator(..), GameState, Inputs(..), MapPoint, Maze, PlayerColor(..), assetLookup, cells, down, escalators, forAllCells, left, right, toPoint, up)
+import Types (AssetName(..), GAssets, Assets, DirMap(..), Dir(..), Escalator(..), GameState, GameStatus(..), Inputs(..), MapPoint, Maze, PlayerColor(..), assetLookup, cells, down, escalators, forAllCells, left, right, toPoint, up)
 import Unsafe.Coerce (unsafeCoerce) -- TODO(codequality) move to purescript-canvas
 import Web.DOM.Document (createElement)
 import Web.HTML (window)
@@ -94,28 +94,32 @@ loading screenDims =
 render :: Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Maybe Assets -> Point -> GameState -> Effect Unit
 render ctx offscreenCanvas offscreenDims screenDims mAssets realMouse gameState =
   maybe (D.render ctx $ loading screenDims) (\assets -> do
-    let debugText = renderText 100.0 100.0 white 12 (show $ {
-          timer: gameState.timer,
-          touches: Map.keys gameState.touches
-        })
-    -- FIXME draw dragging player first, then in descending order by y coordinate
-    let players =
-          foldMapWithIndex
-            (\pCol pPos ->
-                let mDragPoint = unwrap do
-                      ds <- First gameState.dragging
-                      guard (ds.playerColor == pCol) (pure ds.dragPoint)
-                in drawPlayer offscreenDims pPos mDragPoint realMouse (assetLookup (APlayer pCol) assets))
-            gameState.players
-    let r = gameState.renderOffset
-    let bg = image (assetLookup ABackground assets)
-    let scrDims = { w: toNumber screenDims.w, h: toNumber screenDims.h }
-    D.render ctx
-      (D.scale zoom zoom (GFX.background screenDims bg <>
-        (translate (-r.x) (-r.y) (
-          image (canvasElementToImageSource offscreenCanvas) <>
-          players)) <>
-        debugText <> overlay scrDims gameState assets)))
+    if gameState.status == Waiting then
+      D.render ctx $ GFX.background screenDims (image $ assetLookup ABackground assets) <>
+        renderText (toNumber screenDims.w/2.0) (toNumber screenDims.h/2.0) white 18 "Waiting for players"
+     else do
+      let debugText = renderText 100.0 100.0 white 12 (show $ {
+            timer: gameState.timer,
+            touches: Map.keys gameState.touches
+          })
+      -- FIXME draw dragging player first, then in descending order by y coordinate
+      let players =
+            foldMapWithIndex
+              (\pCol pPos ->
+                  let mDragPoint = unwrap do
+                        ds <- First gameState.dragging
+                        guard (ds.playerColor == pCol) (pure ds.dragPoint)
+                  in drawPlayer offscreenDims pPos mDragPoint realMouse (assetLookup (APlayer pCol) assets))
+              gameState.players
+      let r = gameState.renderOffset
+      let bg = image (assetLookup ABackground assets)
+      let scrDims = { w: toNumber screenDims.w, h: toNumber screenDims.h }
+      D.render ctx
+        (D.scale zoom zoom (GFX.background screenDims bg <>
+          (translate (-r.x) (-r.y) (
+            image (canvasElementToImageSource offscreenCanvas) <>
+            players)) <>
+          debugText <> overlay scrDims gameState assets)))
     mAssets
 
 resize :: CanvasElement -> DimensionPair -> Effect Unit

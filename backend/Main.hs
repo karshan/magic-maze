@@ -48,21 +48,35 @@ addClient mv pendingConn = do
             t <- getCurrentTime
             return $ roomState & L.connections %~ (Map.adjust (L.lastPong .~ t) name)
     conn <- acceptRequest' pendingConn (modifyMVar_ mv updatePongTime)
-    mDir <- modifyMVar mv
+    (mDir, shouldStartGame) <- modifyMVar mv
         (\roomState ->
             if length (roomState ^. L.connections) >= 4 then
-                return (roomState, Nothing)
+                return (roomState, (Nothing, False))
             else do
                 let remainingDirs = Set.fromList [ N, E, S, W ] \\
                       Set.fromList (map (view L.allowedDir) $ roomState ^. L.connections ^.. each)
                 dir <- fromMaybe impossible <$> randomList (Set.toList remainingDirs)
                 curTime <- getCurrentTime
                 let newConnState = ConnectionState conn dir curTime
-                return $ (roomState & L.connections %~ (Map.insert name newConnState), Just dir))
+                let shouldStartGame = length (roomState ^. L.connections) == 3 && roomState ^.L.gameState ^. L.status == Waiting
+                let startGame x = if shouldStartGame then Started else x
+                return $ (roomState & L.connections %~ (Map.insert name newConnState) & L.gameState.L.status %~ startGame, (Just dir, shouldStartGame)))
+    if shouldStartGame then do
+        void $ forkIO (tickThread mv)
+        roomState <- readMVar mv
+        broadcast mv (toS $ encode $ SSetState (roomState ^. L.gameState)) -- FIXME s/SSetState/SStarted/g
+        return ()
+    else
+        return ()
     return $ ((\dir -> (name, dir)) <$> mDir, conn)
 
-removeClient :: MVar RoomState -> Text -> IO ()
-removeClient mv name = modifyMVar_ mv (return . over L.connections (Map.delete name))
+removeClient :: MVar RoomState -> Text -> IO Bool -- 0 clients remain
+removeClient mv name =
+    modifyMVar mv
+        (\roomState ->
+            return
+                (over L.connections (Map.delete name) roomState,
+                    length (roomState ^. L.connections) == 1))
 
 broadcast :: MVar RoomState -> Text -> IO ()
 broadcast mv msg = do
@@ -76,14 +90,18 @@ broadcastExcept name mv msg = do
         Map.filterWithKey (\k _ -> k /= name) . view L.connections =<< readMVar mv
 
 tickThread :: MVar RoomState -> IO ()
-tickThread roomStateMV = forever $ do
+tickThread roomStateMV = do
     threadDelay 1000000
-    modifyMVar_ roomStateMV
+    gameOver <- modifyMVar roomStateMV
         (\roomState ->
             if roomState ^. L.gameState.L.timer <= 1 then
-                return $ roomState & L.gameState.L.timer .~ 0 & L.gameState.L.status .~ Lost
+                return (roomState & L.gameState.L.timer .~ 0 & L.gameState.L.status .~ Lost, True)
             else
-                return $ roomState & L.gameState.L.timer %~ (\x -> x - 1))
+                return (roomState & L.gameState.L.timer %~ (\x -> x - 1), False))
+    if gameOver == False then
+        tickThread roomStateMV
+    else
+        return ()
 
 -- broadcast the list of currently connected clients
 broadcastClients :: MVar RoomState -> IO ()
@@ -101,7 +119,8 @@ main :: IO ()
 main = do
     Just port <- (readMaybe <=< head) <$> getArgs
     serverStateMV <- newMVar Map.empty
-    run port (websocketsOr defaultConnectionOptions (wsApp serverStateMV) backupApp)
+    putText $ "magic-maze-backend listening on " <> show port
+    run port (websocketsOr defaultConnectionOptions (wsApp serverStateMV) (backupApp serverStateMV))
 
 wsApp :: MVar ServerState -> PendingConnection -> IO ()
 wsApp serverStateMV pendingConn = do
@@ -113,7 +132,6 @@ wsApp serverStateMV pendingConn = do
             maybe
                 (do
                     newRoomStateMV <- newMVar (RoomState Map.empty initialState)
-                    void $ forkIO (tickThread newRoomStateMV)
                     return (Map.insert path newRoomStateMV serverState, newRoomStateMV))
                 (\existingRoomStateMV -> return (serverState, existingRoomStateMV))
                 (Map.lookup path serverState))
@@ -125,8 +143,11 @@ wsApp serverStateMV pendingConn = do
             sendTextData conn . encode . SSetState =<< view L.gameState <$> readMVar roomStateMV
             (flip finally
                 (do
-                    removeClient roomStateMV name
-                    broadcastClients roomStateMV) $ do
+                    allLeft <- removeClient roomStateMV name
+                    if allLeft then
+                        modifyMVar_ serverStateMV (return . Map.delete path)
+                    else
+                        broadcastClients roomStateMV) $ do
                 forkPingThread conn 30
                 forever $ do
                     (a :: Text) <- receiveData conn
@@ -152,8 +173,23 @@ wsApp serverStateMV pendingConn = do
                                     mCommandToSend)
                             eCommand))
 
-backupApp :: Application
-backupApp request f =
-    staticApp ((defaultWebAppSettings "static") { ssMaxAge = MaxAgeSeconds 0 }) (redir request) f
-        where
-            redir req = if "." `T.isInfixOf` T.concat (pathInfo req) then req else req { pathInfo = [ "index.html" ] }
+backupApp :: MVar ServerState -> Application
+backupApp serverStateMV request f =
+    if pathInfo request == [] then do
+        ss <- readMVar serverStateMV
+        let numRooms = length (Map.keys ss)
+        let header :: LByteString = "<style>body { font-family: \"Lucida Console\", Monaco, monospace }</style>"
+        content :: [Text] <- catMaybes <$> sequence
+                (Map.elems (Map.mapWithKey
+                    (\r roomStateMV -> do
+                        rs <- readMVar roomStateMV
+                        if length (rs ^. L.connections) >= 4 then
+                            return Nothing
+                        else
+                            return $ Just $ "<div><a href=\"https://maze.karshan.me" <> r <> "\">" <> r <> "</a> " <> show (length (rs ^. L.connections)) <>  "/4</div>")
+                    ss))
+        f $ responseLBS status200 [("Content-Type", "text/html")] (header <> "<div>" <> (show (length content)) <> " open game(s)" <> "</div>" <> toS (T.concat content))
+    else
+        staticApp ((defaultWebAppSettings "static") { ssMaxAge = MaxAgeSeconds 0 }) (redir request) f
+            where
+                redir req = if "." `T.isInfixOf` T.concat (pathInfo req) then req else req { pathInfo = [ "index.html" ] }
