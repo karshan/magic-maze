@@ -90,13 +90,14 @@ loading screenDims =
     filled (D.fillColor black) (rectangle 0.0 0.0 (toNumber screenDims.w) (toNumber screenDims.h)) <>
       (renderText (toNumber screenDims.w/2.0) (toNumber screenDims.h/2.0) white 12 "Loading")
 
-render :: Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Maybe Assets -> Point -> GameState -> Effect Unit
-render ctx offscreenCanvas offscreenDims screenDims mAssets realMouse gameState =
+render :: String -> Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Maybe Assets -> Point -> GameState -> Effect Unit
+render path ctx offscreenCanvas offscreenDims screenDims mAssets realMouse gameState =
   maybe (D.render ctx $ loading screenDims) (\assets -> do
     if gameState.status == Waiting then do
       let scrDims = { w: toNumber screenDims.w, h: toNumber screenDims.h }
       D.render ctx $ GFX.background screenDims (image $ assetLookup ABackground assets) <>
-        renderText (toNumber screenDims.w * 0.45) (toNumber screenDims.h/2.0) white 18 "Waiting for players" <> overlay false scrDims gameState assets
+        renderText (toNumber screenDims.w * 0.45) (toNumber screenDims.h/2.0) white 18 "Waiting for players" <>
+        overlay false scrDims gameState assets
      else do
       let debugText = renderText 100.0 100.0 white 12 (show $ {
             timer: gameState.timer,
@@ -241,5 +242,5 @@ main = onDOMContentLoaded do
             -- TODO(codequality) rerenderChan should only change when the maze changes, right now it changes on every server command received
             let renderedMazeSignal = renderedMaze $ { maze: _, offscreenDims: _, mAssets: _ } <$> subscribe rerenderChan <*> offscreenDims <*> mAssets
             -- TODO(minor) sampleOn animationFrame ?
-            runSignal (render ctx offscreenCanvas <$> offscreenDims <*> screenDims <*> mAssets <*> realMousePos <*> game))
+            runSignal (render path ctx offscreenCanvas <$> offscreenDims <*> screenDims <*> mAssets <*> realMousePos <*> game))
         mcanvas

@@ -12,6 +12,7 @@ import           Control.Lens
 import           Control.Lens.TH                (makeFieldsNoPrefix)
 import           Control.Monad.Random
 import           Data.Aeson
+import           Data.CaseInsensitive           as CI (mk)
 import           Data.Map                       (Map)
 import qualified Data.Map                       as Map
 import           Data.Set                       ((\\))
@@ -24,7 +25,7 @@ import           Network.Wai.Handler.Warp
 import           Network.Wai.Handler.WebSockets
 import           Network.WebSockets             (requestPath)
 import           Network.WebSockets.Connection
-import           Prelude                        (String)
+import           Prelude                        (String, lookup)
 import           Protolude
 import           System.Environment             (getArgs)
 import           System.Random                  (randomRIO, randomIO)
@@ -78,13 +79,11 @@ removeClient mv name =
                     length (roomState ^. L.connections) == 1))
 
 broadcast :: MVar RoomState -> Text -> IO ()
-broadcast mv msg = do
-    putText $ "broadcasting " <> msg
+broadcast mv msg =
     mapM_ (flip sendTextData msg . view L.connection) . view L.connections =<< readMVar mv
 
 broadcastExcept :: Text -> MVar RoomState -> Text -> IO ()
 broadcastExcept name mv msg = do
-    putText $ "broadcasting " <> msg
     mapM_ (flip sendTextData msg . view L.connection) .
         Map.filterWithKey (\k _ -> k /= name) . view L.connections =<< readMVar mv
 
@@ -112,6 +111,11 @@ broadcastClients roomStateMV = do
     mapM_ (\(n, connState) -> sendTextData (connState ^. L.connection) $ msg roomState n)
         (Map.toList $ roomState ^. L.connections)
 
+websocketsOr' opts app backup req sendResponse =
+    case websocketsApp opts (app req) req of
+        Nothing -> backup req sendResponse
+        Just res -> sendResponse res
+
 -- FIXME keepAlive ping, and SetState when client comes to life after being dead
 -- FIXME kill rooms after game is won/lost
 main :: IO ()
@@ -119,10 +123,19 @@ main = do
     Just port <- (readMaybe <=< head) <$> getArgs
     serverStateMV <- newMVar Map.empty
     putText $ "magic-maze-backend listening on " <> show port
-    run port (websocketsOr defaultConnectionOptions (wsApp serverStateMV) (backupApp serverStateMV))
+    run port (websocketsOr' defaultConnectionOptions (wsApp serverStateMV) (backupApp serverStateMV))
 
-wsApp :: MVar ServerState -> PendingConnection -> IO ()
-wsApp serverStateMV pendingConn = do
+roomInfo :: Text -> RequestHeaders -> MVar RoomState -> IO Text
+roomInfo path headers roomStateMV = do
+    t <- getCurrentTime
+    rs <- readMVar roomStateMV
+    return $ "[" <> show t <> "] " <> path <>
+        " (" <> show (Prelude.lookup (CI.mk $ toS ("X-Forwarded-For" :: Text)) headers) <> "): " <>
+        (show $ length $ rs ^. L.connections) <> " players " <>
+        "(" <> show (rs ^. L.gameState ^. L.status) <> ")"
+
+wsApp :: MVar ServerState -> Request -> PendingConnection -> IO ()
+wsApp serverStateMV req pendingConn = do
     let path = toS $ requestPath (pendingRequest pendingConn)
 
     -- Get existing roomStateMV or create a new one
@@ -137,6 +150,7 @@ wsApp serverStateMV pendingConn = do
     (mNameDir, conn) <- addClient roomStateMV pendingConn
     mNameDir & maybe (sendTextData conn (encode SRoomFull) >> sendClose conn ("" :: Text))
         (\(name, allowedDir) -> do
+            putText =<< roomInfo path (requestHeaders req) roomStateMV
             sendTextData conn (encode $ SSetAllowedDir allowedDir)
             broadcastClients roomStateMV
             modifyMVar_ roomStateMV (\rs -> return (rs & L.gameState.L.maze.L.wepacq .~ (rs ^. L.gameState.L.status == WeaponsAcquired)))
@@ -144,6 +158,7 @@ wsApp serverStateMV pendingConn = do
             (flip finally
                 (do
                     allLeft <- removeClient roomStateMV name
+                    putText =<< roomInfo path (requestHeaders req) roomStateMV
                     if allLeft then
                         modifyMVar_ serverStateMV (return . Map.delete path)
                     else
@@ -178,15 +193,18 @@ backupApp serverStateMV request f =
     if pathInfo request == [] then do
         ss <- readMVar serverStateMV
         let numRooms = length (Map.keys ss)
-        let header :: LByteString = "<style>body { font-family: \"Lucida Console\", Monaco, monospace }</style>"
+        let createButton :: LByteString = "<div style=\"padding-bottom: 1em\"><span id=\"create\" onclick=\"window.location.pathname = '/' + Math.random().toString(36).substring(2, 8)\">create</span></div>"
+        let header :: LByteString = "<style>body { font-family: \"Lucida Console\", Monaco, monospace }\n#create { color: blue; cursor: pointer; }</style>" <> createButton
         content :: [Text] <- catMaybes <$> sequence
                 (Map.elems (Map.mapWithKey
                     (\r roomStateMV -> do
                         rs <- readMVar roomStateMV
-                        if rs ^. L.gameState.L.status /= Waiting then
-                            return Nothing
+                        if rs ^. L.gameState.L.status == Waiting ||
+                           (rs ^. L.gameState.L.status == Started &&
+                                length (rs ^. L.connections) < 4) then
+                            return $ Just $ "<div><a href=\"https://maze.karshan.me" <> r <> "\">" <> r <> "</a> " <> show (length (rs ^. L.connections)) <>  "/4</div>"
                         else
-                            return $ Just $ "<div><a href=\"https://maze.karshan.me" <> r <> "\">" <> r <> "</a> " <> show (length (rs ^. L.connections)) <>  "/4</div>")
+                            return Nothing)
                     ss))
         f $ responseLBS status200 [("Content-Type", "text/html")] (header <> "<div>" <> (show (length content)) <> " open game(s)" <> "</div>" <> toS (T.concat content))
     else
