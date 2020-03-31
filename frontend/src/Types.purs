@@ -181,7 +181,7 @@ data GameStatus =
   | RoomFull
 
 type PlayerPositions = Map PlayerColor MapPoint
-type DragState = { playerColor :: PlayerColor, dragPoint :: Point }
+type DragState = { isMouse :: Boolean, playerColor :: PlayerColor, dragPoint :: Point }
 type TouchState = { pagePoint :: Point, renderOffset :: Point }
 type GameState = {
   maze :: Maze,
@@ -214,7 +214,7 @@ type KeyboardInputs =
 type MouseWheelInputs =
   { screenDims :: { w :: Number, h :: Number }, offscreenDims :: DimensionPair, mWheelEvent :: (Maybe WheelEvent) }
 type TouchInputs =
-  { screenDims :: { w :: Number, h :: Number }, offscreenDims :: DimensionPair, mTouchEvent :: (Maybe TouchEvent_) }
+  { screenDims :: { w :: Number, h :: Number }, offscreenDims :: DimensionPair, mTouchEvent :: (Maybe TouchEvent_), ws :: Maybe (WebSocket) }
 data Inputs =
     Mouse MouseInputs
   | Keyboard KeyboardInputs

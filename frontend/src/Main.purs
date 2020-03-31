@@ -6,9 +6,10 @@ import Data.Foldable (foldl, foldMap, length)
 import Data.FoldableWithIndex (foldWithIndexM, foldMapWithIndex)
 import Data.Int (floor, toNumber)
 import Data.Lens ((^.))
+import Data.List (head) as L
 import Data.Map (Map, lookup)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..), maybe, fromMaybe)
 import Data.Maybe.First (First(..))
 import Data.Monoid (guard)
 import Data.Newtype (unwrap)
@@ -31,6 +32,8 @@ import Signal.DOM (DimensionPair, MouseButton(..), animationFrame, keyPressed, m
 import Signal.Effect (foldEffect, mapEffect)
 import Signal.MouseWheel (create) as Wheel
 import Signal.Touch (create) as Touch
+import Signal.Touch
+import Web.TouchEvent.Touch (pageX, pageY)
 import Signal.Time (every)
 import Signal.WebSocket (create) as WS
 import Types (AssetName(..), GAssets, Assets, DirMap(..), Dir(..), Escalator(..), GameState, GameStatus(..), Inputs(..), MapPoint, Maze, PlayerColor(..), assetLookup, cells, down, escalators, forAllCells, left, right, toPoint, up, wepacq)
@@ -90,8 +93,8 @@ loading screenDims =
     filled (D.fillColor black) (rectangle 0.0 0.0 (toNumber screenDims.w) (toNumber screenDims.h)) <>
       (renderText (toNumber screenDims.w/2.0) (toNumber screenDims.h/2.0) white 12 "Loading")
 
-render :: String -> Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Maybe Assets -> Point -> GameState -> Effect Unit
-render path ctx offscreenCanvas offscreenDims screenDims mAssets realMouse gameState =
+render :: String -> Context2D -> CanvasElement -> DimensionPair -> DimensionPair -> Maybe Assets -> Point -> Point -> GameState -> Effect Unit
+render path ctx offscreenCanvas offscreenDims screenDims mAssets realMouse realTouchPos gameState =
   maybe (D.render ctx $ loading screenDims) (\assets -> do
     if gameState.status == Waiting then do
       let scrDims = { w: toNumber screenDims.w, h: toNumber screenDims.h }
@@ -100,9 +103,8 @@ render path ctx offscreenCanvas offscreenDims screenDims mAssets realMouse gameS
         overlay false scrDims gameState assets
      else do
       let debugText = renderText 100.0 100.0 white 12 (show $ {
-            timer: gameState.timer,
-            status: gameState.status,
-            touches: Map.keys gameState.touches
+            mouse: realTouchPos,
+            renderOffset: gameState.renderOffset
           })
       -- FIXME draw dragging player first, then in descending order by y coordinate
       let players =
@@ -111,7 +113,8 @@ render path ctx offscreenCanvas offscreenDims screenDims mAssets realMouse gameS
                   let mDragPoint = unwrap do
                         ds <- First gameState.dragging
                         guard (ds.playerColor == pCol) (pure ds.dragPoint)
-                  in drawPlayer offscreenDims pPos mDragPoint realMouse (assetLookup (APlayer pCol) assets))
+                      p = if maybe false (\ds -> ds.isMouse) gameState.dragging then realMouse else realTouchPos
+                  in drawPlayer offscreenDims pPos mDragPoint p (assetLookup (APlayer pCol) assets))
               gameState.players
       let r = gameState.renderOffset
       let bg = image (assetLookup ABackground assets)
@@ -121,7 +124,7 @@ render path ctx offscreenCanvas offscreenDims screenDims mAssets realMouse gameS
           (translate (-r.x) (-r.y) (
             image (canvasElementToImageSource offscreenCanvas) <>
             players)) <>
-          overlay true scrDims gameState assets)))
+          overlay true scrDims gameState assets <> debugText)))
     mAssets
 
 resize :: CanvasElement -> DimensionPair -> Effect Unit
@@ -170,8 +173,8 @@ main = onDOMContentLoaded do
                             scrDims <*> offscreenDims <*> upKey <*> rightKey <*> downKey <*> leftKey
             let mouseWheelInputs = { screenDims: _, offscreenDims: _, mWheelEvent: _ } <$>
                             scrDims <*> offscreenDims <*> mouseWheel
-            let touchInputs = { screenDims: _, offscreenDims: _, mTouchEvent: _ } <$>
-                            scrDims <*> offscreenDims <*> touch
+            let touchInputs = { screenDims: _, offscreenDims: _, mTouchEvent: _, ws: _ } <$>
+                            scrDims <*> offscreenDims <*> touch <*> ws
             let inputs =
                   foldl merge
                     (Keyboard <$> arrowKeys) [
@@ -184,6 +187,12 @@ main = onDOMContentLoaded do
             rerenderChan <- channel initialState.maze
             game <- foldEffect (gameLogic rerenderChan) initialState inputs
             let realMousePos = (\g m -> g.renderOffset + m) <$> game <*> mPos
+            let realTouchPos = (\g m -> case m of
+                                          (Just (TouchMove e)) -> do
+                                              let touchToPoint t = { x: toNumber (pageX t), y: toNumber (pageY t) }
+                                              let mP = touchToPoint <$> (L.head $ Map.values $ changedTouches e)
+                                              g.renderOffset + (fromMaybe {x:0.0, y:0.0} mP)
+                                          _ -> g.renderOffset) <$> game <*> touch
             ctx <- getContext2D canvas
             offscreenCtx <- getContext2D offscreenCanvas
             runSignal (resize canvas <$> screenDims)
@@ -242,5 +251,5 @@ main = onDOMContentLoaded do
             -- TODO(codequality) rerenderChan should only change when the maze changes, right now it changes on every server command received
             let renderedMazeSignal = renderedMaze $ { maze: _, offscreenDims: _, mAssets: _ } <$> subscribe rerenderChan <*> offscreenDims <*> mAssets
             -- TODO(minor) sampleOn animationFrame ?
-            runSignal (render path ctx offscreenCanvas <$> offscreenDims <*> screenDims <*> mAssets <*> realMousePos <*> game))
+            runSignal (render path ctx offscreenCanvas <$> offscreenDims <*> screenDims <*> mAssets <*> realMousePos <*> realTouchPos <*> game))
         mcanvas

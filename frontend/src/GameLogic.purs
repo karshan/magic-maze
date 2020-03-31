@@ -183,13 +183,13 @@ evalClientCommand (CPlayerMove pCol _ targetPos) gs =
 evalClientCommand (CExplore _ _) gs = Tuple gs false
 
 -- TODO evalBBox in descending order of player y coordinate
-maybeStartDrag :: RealMouseInputs -> PlayerPositions -> Maybe DragState
-maybeStartDrag i players =
+maybeStartDrag :: Boolean -> RealMouseInputs -> PlayerPositions -> Maybe DragState
+maybeStartDrag isMouse i players =
   unwrap $
    foldlWithIndex
      (\playerColor accum position ->
          accum <>
-           map ({ playerColor: playerColor, dragPoint: _ })
+           map ({ isMouse: isMouse, playerColor: playerColor, dragPoint: _ })
              (First $ evalBBox (GFX.playerBBox i.offscreenDims position) (ScreenPoint i.realMousePos)))
      (First Nothing)
      players
@@ -210,13 +210,13 @@ data DragCommand =
 
 -- TODO explore and drag can occur on the same mouse press
 -- only one should occur on one mousepress
-gameLogicState :: MouseInputs -> State GameState (Tuple (Maybe C2SCommand) Boolean) --shouldeReRender
-gameLogicState mouseInputs = do
+gameLogicState :: Boolean -> MouseInputs -> State GameState (Tuple (Maybe C2SCommand) Boolean) --shouldeReRender
+gameLogicState isMouse mouseInputs = do
   gs <- get
   renderOffset <- _.renderOffset <$> get
   let realMouseI = { offscreenDims: mouseInputs.offscreenDims, ws: mouseInputs.ws, mousePressed: mouseInputs.mousePressed, realMousePos: mouseInputs.mousePos + renderOffset }
   explore <- if gs.allowedDir == S then handleExplore realMouseI else pure Nothing
-  (Tuple drag shouldReRender) <- handleDrag realMouseI
+  (Tuple drag shouldReRender) <- handleDrag isMouse realMouseI
   pure $ Tuple (unwrap $ First drag <> First explore) shouldReRender
 
 -- FIXME only send CExplore command, if it is a legal explore
@@ -242,8 +242,8 @@ handleExplore mouseInputs =
     pure Nothing
 
 -- CLEANUP handleDrag+evalClientCommand
-handleDrag :: RealMouseInputs -> State GameState (Tuple (Maybe C2SCommand) Boolean) -- shouldReRender
-handleDrag mouseInputs = do
+handleDrag :: Boolean -> RealMouseInputs -> State GameState (Tuple (Maybe C2SCommand) Boolean) -- shouldReRender
+handleDrag isMouse mouseInputs = do
   gameState <- get
   let dragCommand = unwrap $ (do
         dragState <- First gameState.dragging
@@ -252,7 +252,7 @@ handleDrag mouseInputs = do
   case dragCommand of
         Nothing -> pure (Tuple Nothing false)
         Just StartDrag -> do
-          put (gameState { dragging = maybeStartDrag mouseInputs gameState.players })
+          put (gameState { dragging = maybeStartDrag isMouse mouseInputs gameState.players })
           pure (Tuple Nothing false)
         -- TODO cleanup following code
         Just (EndDrag dragState) -> do
@@ -288,7 +288,7 @@ gameLogic :: Channel Maze -> Inputs -> GameState -> Effect GameState
 gameLogic rerenderChan inputs gameState =
   case { inputs, gameOver: gameOver gameState } of
     { inputs: Mouse mouseInputs, gameOver: false } -> do
-      let (Tuple (Tuple msgToSend shouldReRender) nextGameState) = runState (gameLogicState mouseInputs) gameState
+      let (Tuple (Tuple msgToSend shouldReRender) nextGameState) = runState (gameLogicState true mouseInputs) gameState
       Chan.send rerenderChan nextGameState.maze
       either (maybe (pure unit) log)
         (\{ ws, m } -> WS.sendString ws m)
@@ -330,23 +330,76 @@ gameLogic rerenderChan inputs gameState =
         pure $ gameState { timer = 0, status = Lost, dragging = Nothing }
       else
         pure $ gameState { timer = gameState.timer - 1 }
-    { inputs: Touch { screenDims, offscreenDims, mTouchEvent }, gameOver: _ } -> do
+    { inputs: Touch { screenDims, offscreenDims, mTouchEvent, ws }, gameOver: _ } -> do
         let touchToPoint t = { x: toNumber (pageX t), y: toNumber (pageY t) }
         let mkStart t = { pagePoint: touchToPoint t, renderOffset: gameState.renderOffset }
         maybe (pure unit) (log <<< unsafeCoerce) mTouchEvent
         case mTouchEvent of
              (Just (TouchStart e)) -> do
-                if length gameState.touches == 0 then
-                  pure $ gameState { touches = Map.union (map mkStart (changedTouches e)) gameState.touches }
-                 else
-                  pure gameState
-             (Just (TouchEnd e)) -> do
+                let ig = if length gameState.touches == 0 then
+                            gameState { touches = Map.union (map mkStart (changedTouches e)) gameState.touches }
+                           else
+                            gameState
+                let mP = touchToPoint <$> (L.head $ Map.values $ changedTouches e)
                 let toRemove = Map.keys $ changedTouches e
-                pure $ gameState { touches = foldl (\acc a -> Map.delete a acc) gameState.touches toRemove }
+                maybe (pure ig) (\p -> do
+                  let mi = { offscreenDims: offscreenDims, mousePos: p, mousePressed: true, ws: Nothing }
+                  let (Tuple (Tuple msgToSend shouldReRender) nextGameState) = runState (gameLogicState false mi) ig
+                  Chan.send rerenderChan nextGameState.maze
+                  either (maybe (pure unit) log)
+                    (\{ ws, m } -> WS.sendString ws m)
+                    (do
+                        ws <- note (Just "WebSocket not open") ws
+                        m <- note Nothing msgToSend
+                        pure { ws: ws, m: genericEncodeJSON defaultOptions m })
+
+                  pure nextGameState)
+                  mP
+
+             (Just (TouchEnd e)) -> do
+                let mP = touchToPoint <$> (L.head $ Map.values $ changedTouches e)
+                let toRemove = Map.keys $ changedTouches e
+                let ig = gameState { touches = foldl (\acc a -> Map.delete a acc) gameState.touches toRemove }
+                maybe (pure ig) (\p -> do
+                  let mi = { offscreenDims: offscreenDims, mousePos: p, mousePressed: false, ws: Nothing }
+                  let (Tuple (Tuple msgToSend shouldReRender) nextGameState) = runState (gameLogicState false mi) ig
+                  Chan.send rerenderChan nextGameState.maze
+                  either (maybe (pure unit) log)
+                    (\{ ws, m } -> WS.sendString ws m)
+                    (do
+                        ws <- note (Just "WebSocket not open") ws
+                        m <- note Nothing msgToSend
+                        pure { ws: ws, m: genericEncodeJSON defaultOptions m })
+
+                  pure nextGameState)
+                  mP
              (Just (TouchCancel e)) -> do
                 let toRemove = Map.keys $ changedTouches e
                 pure $ gameState { touches = foldl (\acc a -> Map.delete a acc) gameState.touches toRemove }
              (Just (TouchMove e)) -> do
+                let mNewRO = L.head $ Map.values $
+                      Map.intersectionWith
+                        (\a b -> b.renderOffset - (a - b.pagePoint))
+                        (touchToPoint <$> changedTouches e)
+                        gameState.touches
+                    ig = if gameState.dragging == Nothing then maybe gameState
+                            (\ro -> gameState {
+                                renderOffset =
+                                  clipRenderOffset
+                                    screenDims
+                                    offscreenDims
+                                    (gameState.maze^.borders)
+                                    ro
+                                }) mNewRO
+                     else gameState
+                    mP = touchToPoint <$> (L.head $ Map.values $ changedTouches e)
+                maybe (pure ig) (\p -> do
+                  let mi = { offscreenDims: offscreenDims, mousePos: p, mousePressed: true, ws: Nothing }
+                  let (Tuple (Tuple msgToSend shouldReRender) nextGameState) = runState (gameLogicState false mi) ig
+                  pure nextGameState)
+                  mP
+
+              {-
                 let scalePoint c {x,y} = {x: (x :: Number) * c, y: y * c}
                 let mNewRO = L.head $ Map.values $
                       Map.intersectionWith
@@ -362,5 +415,6 @@ gameLogic rerenderChan inputs gameState =
                           (gameState.maze^.borders)
                           ro
                       }) mNewRO
+             -}
              Nothing -> pure gameState
     _ -> pure gameState

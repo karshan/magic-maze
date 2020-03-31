@@ -202,7 +202,7 @@ backupApp serverStateMV request f =
                         if rs ^. L.gameState.L.status == Waiting ||
                            (rs ^. L.gameState.L.status == Started &&
                                 length (rs ^. L.connections) < 4) then
-                            return $ Just $ "<div><a href=\"https://maze.karshan.me" <> r <> "\">" <> r <> "</a> " <> show (length (rs ^. L.connections)) <>  "/4</div>"
+                            return $ Just $ "<div><a href=\"" <> r <> "\">" <> r <> "</a> " <> show (length (rs ^. L.connections)) <>  "/4</div>"
                         else
                             return Nothing)
                     ss))
